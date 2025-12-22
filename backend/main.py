@@ -20,11 +20,13 @@ class ProcessDocRequest(BaseModel):
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    os.getenv("FRONTEND_URL", ""),
     "*" # Allow all for development convenience
 ]
 
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=origins if os.getenv("ENVIRONMENT") == "production" else ["*"], 
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"], # Allows GET, POST, OPTIONS, etc.
