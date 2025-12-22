@@ -1,26 +1,18 @@
 import React, { useState } from 'react';
 import { 
   MessageSquare, FileText, Database, Bot, Wrench, 
-  Cpu, Layers, Globe, Mail, Code, Terminal, Search, Box, Sparkles,
-  BrainCircuit, Scissors
+  Cpu, Layers, Globe, Mail, Code, Terminal, Search, Box, Scissors, BrainCircuit
 } from 'lucide-react';
 
+// Categories Configuration
 export const nodeCategories = {
-    'Data / RAG': [
-    { type: 'pdfLoader', label: 'PDF Loader', icon: FileText, desc: "Parse PDF" },
-    { type: 'textSplitter', label: 'Text Splitter', icon: Scissors, desc: "Chunk documents" }, // NEW
-    { type: 'vectorStore', label: 'Supabase Vector', icon: Database, desc: "Knowledge Base" },
-  ],
-  'Helpers': [
-    { type: 'chatMemory', label: 'Chat Memory', icon: BrainCircuit, desc: "Session history" }, // NEW
-    { type: 'htmlRenderer', label: 'HTML Renderer', icon: Code, desc: "Visualize HTML" },
-  ],
   'Inputs / Outputs': [
     { type: 'chatInput', label: 'Chat Input', icon: MessageSquare, desc: "User entry" },
     { type: 'chatOutput', label: 'Chat Output', icon: MessageSquare, desc: "Display result" },
   ],
   'Prompts': [
     { type: 'promptTemplate', label: 'Prompt Template', icon: FileText, desc: "Dynamic variables" },
+    { type: 'promptBuilder', label: 'Prompt Builder', icon: Code, desc: "Visual builder" },
   ],
   'Models': [
     { type: 'groqModel', label: 'Groq', icon: Cpu, desc: "Llama 3, Mixtral" },
@@ -33,6 +25,15 @@ export const nodeCategories = {
     { type: 'webSearchNode', label: 'DuckDuckGo', icon: Globe, desc: "Search engine" },
     { type: 'gmailNode', label: 'Gmail', icon: Mail, desc: "Email client" },
   ],
+  'Data / RAG': [
+    { type: 'pdfLoader', label: 'PDF Loader', icon: FileText, desc: "Parse PDF" },
+    { type: 'textSplitter', label: 'Text Splitter', icon: Scissors, desc: "Chunk documents" },
+    { type: 'vectorStore', label: 'Supabase Vector', icon: Database, desc: "Knowledge Base" },
+  ],
+  'Helpers': [
+    { type: 'chatMemory', label: 'Chat Memory', icon: BrainCircuit, desc: "Session history" },
+    { type: 'htmlRenderer', label: 'HTML Renderer', icon: Code, desc: "Visualize HTML" },
+  ]
 };
 
 export default function Sidebar() {
@@ -53,7 +54,8 @@ export default function Sidebar() {
   }, {} as any);
 
   return (
-    <aside className="w-[320px] bg-slate-950 border-r border-slate-800 flex flex-col h-full">
+    // REMOVED fixed width, added h-full and w-full
+    <aside className="h-full w-full bg-slate-950 border-r border-slate-800 flex flex-col">
       <div className="p-4 border-b border-slate-800">
         <div className="flex items-center gap-2 mb-4">
             <Box className="w-5 h-5 text-purple-500" />
@@ -77,7 +79,7 @@ export default function Sidebar() {
                 <h3 className="text-xs font-semibold text-slate-500 uppercase mb-3 px-1 tracking-wider">
                 {category}
                 </h3>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
                 {nodes.map((node: any) => (
                     <div
                     key={node.type}
@@ -87,7 +89,6 @@ export default function Sidebar() {
                     >
                         <div className="flex items-center justify-between">
                              <node.icon className="w-5 h-5 text-purple-400 group-hover:text-purple-300" />
-                             <div className="w-2 h-2 rounded-full bg-slate-800 group-hover:bg-purple-500 transition-colors" />
                         </div>
                         <div>
                             <span className="text-xs font-medium text-slate-200 block">{node.label}</span>
