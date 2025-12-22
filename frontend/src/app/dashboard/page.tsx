@@ -36,7 +36,8 @@ import {
     Clock, 
     Search, 
     AlertTriangle, 
-    FileText 
+    FileText,
+    UploadCloud 
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
@@ -74,9 +75,8 @@ import PromptTemplateNode from '@/components/nodes/PromptTemplateNode';
 import TextSplitterNode from '@/components/nodes/TextSplitterNode';
 import ChatMemoryNode from '@/components/nodes/ChatMemoryNode';
 import HTMLRendererNode from '@/components/nodes/HTMLRendererNode';
-import CustomComponentNode from '@/components/nodes/CustomComponentNode'; // Ensure this is imported
+import CustomComponentNode from '@/components/nodes/CustomComponentNode';
 
-// Placeholder for future components
 const PlaceholderNode = ({ data }: any) => (
   <BaseNode title={data.label} color="slate">
     <div className="text-xs text-slate-500 p-2">Config coming soon.</div>
@@ -96,7 +96,9 @@ function DashboardInner() {
   const router = useRouter();
   const supabase = createClient();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const { screenToFlowPosition, toObject, deleteElements } = useReactFlow();
+  
+  // Added setViewport to restore zoom/pan from JSON
+  const { screenToFlowPosition, toObject, deleteElements, setViewport } = useReactFlow();
 
   // ---------------------------------------------------------------------------
   // STATE MANAGEMENT
@@ -170,7 +172,7 @@ function DashboardInner() {
     promptBuilder: PromptBuilderNode as any,
     chatMemory: ChatMemoryNode as any,
     htmlRenderer: HTMLRendererNode as any,
-    customComponent: CustomComponentNode as any, // Registered Custom Node
+    customComponent: CustomComponentNode as any,
     ollamaModel: PlaceholderNode,
     fileLoader: PdfLoaderNode as any,
     textOutput: TextInputNode as any,
@@ -221,6 +223,16 @@ function DashboardInner() {
       setIsUnsaved(true);
   }, []);
 
+  useOnSelectionChange({
+    onChange: ({ nodes }) => {
+        setSelectedNodes(nodes.map((node) => node.id));
+    },
+  });
+
+  // ---------------------------------------------------------------------------
+  // DRAG AND DROP HANDLERS (UPDATED)
+  // ---------------------------------------------------------------------------
+
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -229,8 +241,67 @@ function DashboardInner() {
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
+
+      // --- CASE 1: DROP A JSON FILE ---
+      if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+          const file = event.dataTransfer.files[0];
+          
+          // Basic validation
+          if (file.type !== "application/json" && !file.name.endsWith(".json")) {
+              toast.error("Invalid file type. Please drop a .json file.");
+              return;
+          }
+
+          const reader = new FileReader();
+          reader.onload = (e) => {
+              try {
+                  const flowData = JSON.parse(e.target?.result as string);
+
+                  if (!flowData.nodes || !flowData.edges) {
+                      throw new Error("Invalid flow JSON: Missing nodes or edges.");
+                  }
+
+                  // Confirm overwrite if canvas isn't empty
+                  if (nodes.length > 0 && !confirm("This will overwrite your current flow. Continue?")) {
+                      return;
+                  }
+
+                  // Hydrate nodes (re-attach data handler)
+                  const hydratedNodes = flowData.nodes.map((n: any) => ({
+                      ...n,
+                      data: { ...n.data, onChange: onNodeDataChange }
+                  }));
+
+                  // Update State
+                  setNodes(hydratedNodes);
+                  setEdges(flowData.edges);
+                  
+                  // Restore Viewport if available
+                  if (flowData.viewport) {
+                      const { x, y, zoom } = flowData.viewport;
+                      setViewport({ x, y, zoom });
+                  }
+
+                  // Update Flow Metadata
+                  setFlowName(file.name.replace('.json', '')); // Use filename as title
+                  setCurrentFlowId(null); // Treat as new unsaved flow
+                  setIsUnsaved(true);
+                  
+                  toast.success(`Imported "${file.name}"`);
+
+              } catch (err) {
+                  console.error("Import failed:", err);
+                  toast.error("Failed to parse flow file.");
+              }
+          };
+          reader.readAsText(file);
+          return; // Stop execution here
+      }
+
+      // --- CASE 2: DROP A COMPONENT FROM SIDEBAR ---
       const type = event.dataTransfer.getData('application/reactflow');
       const label = event.dataTransfer.getData('application/label');
+
       if (!type) return;
 
       const position = screenToFlowPosition({ 
@@ -248,14 +319,8 @@ function DashboardInner() {
       setNodes((nds) => nds.concat(newNode));
       setIsUnsaved(true);
     },
-    [screenToFlowPosition, onNodeDataChange]
+    [screenToFlowPosition, onNodeDataChange, nodes.length, setViewport]
   );
-
-  useOnSelectionChange({
-    onChange: ({ nodes }) => {
-        setSelectedNodes(nodes.map((node) => node.id));
-    },
-  });
 
   // ---------------------------------------------------------------------------
   // ACTIONS
@@ -307,12 +372,18 @@ function DashboardInner() {
       handleProtectedAction(() => {
           setFlowName(flow.name);
           setCurrentFlowId(flow.id);
-          const { nodes: savedNodes, edges: savedEdges } = flow.data;
+          const { nodes: savedNodes, edges: savedEdges, viewport } = flow.data;
+          
           setNodes(savedNodes.map((n: any) => ({
               ...n,
               data: { ...n.data, onChange: onNodeDataChange }
           })));
           setEdges(savedEdges || []);
+          
+          if (viewport) {
+              setViewport({ x: viewport.x, y: viewport.y, zoom: viewport.zoom });
+          }
+
           setIsUnsaved(false);
           setView('canvas');
           toast.success(`Loaded "${flow.name}"`);
@@ -397,22 +468,19 @@ function DashboardInner() {
     setLoading(true);
     setChatResponse("");
     
-    // Check for Agent, Model, or Custom Component
     const agentNode = nodes.find(n => n.type === 'agentNode');
     const modelNode = nodes.find(n => n.type === 'groqModel' || n.type === 'openaiModel');
-    const customNode = nodes.find(n => n.type === 'customComponent'); // Allow custom only flow
+    const customNode = nodes.find(n => n.type === 'customComponent');
     
     if (!agentNode && !modelNode && !customNode) { 
         toast.error("Invalid Flow: Add an Agent, Model, or Custom Component."); 
         setLoading(false); return; 
     }
 
-    // Try to get API Key (Naive search for now)
     let apiKey = "";
     if (modelNode) apiKey = (modelNode.data as any).apiKey;
     else if (agentNode) apiKey = (agentNode.data as any).groqApiKey || (agentNode.data as any).apiKey;
     
-    // If running pure custom node, maybe key is not needed or embedded, but we send if found
     if (!apiKey && (agentNode || modelNode)) { 
         toast.error("Missing API Key in Agent/Model node."); 
         setLoading(false); return; 
@@ -505,7 +573,7 @@ function DashboardInner() {
       return (
         <div className="h-screen w-full bg-slate-950 flex overflow-hidden">
              {/* Left: Saved Flows */}
-             <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col z-20 shadow-xl">
+             <div className="w-80 bg-slate-950 border-r border-slate-800 flex flex-col z-20 shadow-xl">
                 <div className="p-5 border-b border-slate-800 bg-slate-900/50">
                     <h2 className="font-bold text-white flex items-center gap-2 mb-4">
                         <Database className="w-4 h-4 text-purple-400" /> Saved Projects
@@ -517,7 +585,7 @@ function DashboardInner() {
                             className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-300 focus:border-purple-500 outline-none transition-all"
                             value={flowSearch}
                             onChange={(e) => setFlowSearch(e.target.value)}
-                            suppressHydrationWarning // Fix hydration error from extensions
+                            suppressHydrationWarning
                         />
                     </div>
                 </div>
@@ -745,6 +813,10 @@ function DashboardInner() {
                 {/* Canvas */}
                 <ResizablePanels.Panel minSize={30}>
                     <div className="w-full h-full relative bg-slate-900" ref={reactFlowWrapper}>
+                        {/* 
+                            DROP ZONE OVERLAY 
+                            (Optional Visual Indicator for Drag and Drop)
+                        */}
                         <ReactFlow
                             nodes={nodes} edges={edges}
                             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
