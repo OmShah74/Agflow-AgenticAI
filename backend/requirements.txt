@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+agno
+sqlalchemy
+psycopg2-binary
+pydantic
+python-multipart
+python-jose[cryptography]
+supabase
+pypdf
+openai
+duckduckgo-search
+newspaper3k
+yfinance
