@@ -1,19 +1,28 @@
-import { Handle, Position } from '@xyflow/react';
+import { NodeProps } from '@xyflow/react';
 import { Globe } from 'lucide-react';
 import BaseNode from './BaseNode';
+import { NodeField } from './NodeComponents';
 
-export default function WebSearchNode() {
+export default function WebSearchNode({ data, id, selected }: NodeProps<any>) {
   return (
-    <BaseNode title="DuckDuckGo Search" icon={Globe} color="blue">
-      <div className="text-xs text-slate-500 italic mb-2">
-        Performs web searches without an API key.
+    <BaseNode 
+        title="DuckDuckGo Search" 
+        icon={Globe} 
+        color="blue" 
+        data={data} 
+        id={id} 
+        selected={selected} 
+        nodeType="webSearchNode"
+    >
+      <div className="p-3 bg-blue-950/20 rounded border border-blue-900/30 m-3 mb-0">
+        <p className="text-[10px] text-blue-200/70 italic text-center">
+          "Performs web searches without an API key."
+        </p>
       </div>
-      <div className="flex justify-end">
-         <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">Tool</span>
-            <Handle type="source" position={Position.Right} className="!bg-blue-500 !w-3 !h-3" />
-        </div>
-      </div>
+
+      <NodeField label="Tool Output" id="tool" inputType="source" handleColor="blue">
+         <div className="text-right text-[10px] text-slate-500">Toolkit</div>
+      </NodeField>
     </BaseNode>
   );
 }
