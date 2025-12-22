@@ -1,18 +1,25 @@
 import { NodeProps } from '@xyflow/react';
-import { FileText, Braces } from 'lucide-react';
+import { Braces } from 'lucide-react';
 import { Textarea } from "@/components/ui/textarea";
-import { NodeCard, NodeHeader, NodeField } from './NodeComponents';
+import BaseNode from './BaseNode';
+import { NodeField } from './NodeComponents';
 
 export default function PromptTemplateNode({ data, id, selected }: NodeProps<any>) {
   return (
-    <NodeCard selected={selected}>
-      <NodeHeader icon={Braces} title="Prompt Template" color="purple" badge="String" />
-      
+    <BaseNode 
+        title="Prompt Template" 
+        icon={Braces} 
+        color="purple" 
+        data={data} 
+        id={id} 
+        selected={selected} 
+        nodeType="promptTemplate"
+    >
       <NodeField label="Template String" id="template" inputType="none">
         <Textarea 
            className="text-xs bg-slate-900 border-slate-700 min-h-[100px] font-mono text-purple-200"
            placeholder="You are a {role}. Answer: {question}"
-           value={data.template}
+           value={data.template || ''}
            onChange={(e) => data.onChange(id, { ...data, template: e.target.value })}
         />
       </NodeField>
@@ -26,6 +33,6 @@ export default function PromptTemplateNode({ data, id, selected }: NodeProps<any
             Output String
          </div>
       </NodeField>
-    </NodeCard>
+    </BaseNode>
   );
 }

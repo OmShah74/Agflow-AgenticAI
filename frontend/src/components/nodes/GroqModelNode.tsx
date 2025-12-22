@@ -2,15 +2,22 @@ import { NodeProps } from '@xyflow/react';
 import { Cpu } from 'lucide-react';
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { NodeCard, NodeHeader, NodeField } from './NodeComponents';
+import BaseNode from './BaseNode'; // Use BaseNode, NOT NodeCard directly
+import { NodeField } from './NodeComponents';
 
 export default function GroqModelNode({ data, id, selected }: NodeProps<any>) {
   return (
-    <NodeCard selected={selected}>
-      <NodeHeader icon={Cpu} title="Groq Model" color="green" />
-
+    <BaseNode 
+        title="Groq Model" 
+        icon={Cpu} 
+        color="green" 
+        data={data} 
+        id={id} 
+        selected={selected} 
+        nodeType="groqModel"
+    >
       <NodeField label="Model Name" id="model" inputType="none">
-         <Select onValueChange={(v) => data.onChange(id, { ...data, model: v })} defaultValue="llama-3.3-70b-versatile">
+         <Select onValueChange={(v) => data.onChange(id, { ...data, model: v })} defaultValue={data.model || "llama-3.3-70b-versatile"}>
             <SelectTrigger className="h-8 text-xs bg-slate-900 border-slate-700 text-slate-300">
                 <SelectValue placeholder="Select Model" />
             </SelectTrigger>
@@ -27,7 +34,7 @@ export default function GroqModelNode({ data, id, selected }: NodeProps<any>) {
             type="password" 
             className="h-8 text-xs bg-slate-900 border-slate-700" 
             placeholder="gsk_..."
-            value={data.apiKey}
+            value={data.apiKey || ''}
             onChange={(e) => data.onChange(id, { ...data, apiKey: e.target.value })}
         />
       </NodeField>
@@ -35,6 +42,6 @@ export default function GroqModelNode({ data, id, selected }: NodeProps<any>) {
       <NodeField label="Model Output" id="out" inputType="source" handleColor="green">
          <div className="text-right text-[10px] text-slate-500">LLM Instance</div>
       </NodeField>
-    </NodeCard>
+    </BaseNode>
   );
 }
