@@ -15,7 +15,7 @@ import {
     EdgeChange,
     ReactFlowProvider,
     useReactFlow,
-    useOnSelectionChange
+    useOnSelectionChange,
 } from '@xyflow/react';
 import * as ResizablePanels from 'react-resizable-panels';
 import '@xyflow/react/dist/style.css';
@@ -36,8 +36,11 @@ import {
     Clock, 
     Search, 
     AlertTriangle, 
-    FileText,
-    UploadCloud 
+    FileText, 
+    Undo, 
+    Redo, 
+    Copy, 
+    Clipboard 
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
@@ -97,29 +100,49 @@ function DashboardInner() {
   const supabase = createClient();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   
-  // Added setViewport to restore zoom/pan from JSON
-  const { screenToFlowPosition, toObject, deleteElements, setViewport } = useReactFlow();
+  // Hooks from React Flow
+  const { 
+      screenToFlowPosition, 
+      toObject, 
+      deleteElements, 
+      setNodes: setReactFlowNodes, 
+      setEdges: setReactFlowEdges,
+      setViewport
+  } = useReactFlow();
 
   // ---------------------------------------------------------------------------
   // STATE MANAGEMENT
   // ---------------------------------------------------------------------------
   
+  // View Control
   const [view, setView] = useState<'templates' | 'canvas'>('templates');
+  
+  // Flow Data
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
   
+  // Undo/Redo History
+  const [history, setHistory] = useState<{nodes: Node[], edges: Edge[]}[]>([{ nodes: [], edges: [] }]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  // Clipboard (Copy/Paste)
+  const [clipboard, setClipboard] = useState<{nodes: Node[], edges: Edge[]} | null>(null);
+
+  // Playground / Execution
   const [chatInput, setChatInput] = useState("");
   const [chatResponse, setChatResponse] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPlayground, setShowPlayground] = useState(true);
 
+  // Persistence (Database)
   const [flowName, setFlowName] = useState("Untitled Flow");
   const [currentFlowId, setCurrentFlowId] = useState<string | null>(null);
   const [savedFlows, setSavedFlows] = useState<any[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [flowSearch, setFlowSearch] = useState("");
 
+  // Dialog & Notification States
   const [isUnsaved, setIsUnsaved] = useState(false);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -153,6 +176,134 @@ function DashboardInner() {
   };
 
   // ---------------------------------------------------------------------------
+  // UNDO / REDO LOGIC
+  // ---------------------------------------------------------------------------
+
+  const takeSnapshot = useCallback(() => {
+      const snapshot = { nodes: [...nodes], edges: [...edges] };
+      
+      setHistory(prev => {
+          const newHistory = prev.slice(0, historyIndex + 1);
+          return [...newHistory, snapshot];
+      });
+      setHistoryIndex(prev => prev + 1);
+      setIsUnsaved(true);
+  }, [nodes, edges, historyIndex]);
+
+  const undo = useCallback(() => {
+      if (historyIndex > 0) {
+          const prevIndex = historyIndex - 1;
+          const prevState = history[prevIndex];
+          setNodes(prevState.nodes);
+          setEdges(prevState.edges);
+          setHistoryIndex(prevIndex);
+          toast.info("Undo");
+      }
+  }, [history, historyIndex]);
+
+  const redo = useCallback(() => {
+      if (historyIndex < history.length - 1) {
+          const nextIndex = historyIndex + 1;
+          const nextState = history[nextIndex];
+          setNodes(nextState.nodes);
+          setEdges(nextState.edges);
+          setHistoryIndex(nextIndex);
+          toast.info("Redo");
+      }
+  }, [history, historyIndex]);
+
+  // ---------------------------------------------------------------------------
+  // COPY / PASTE LOGIC
+  // ---------------------------------------------------------------------------
+
+  const copySelection = useCallback(() => {
+      const nodesToCopy = nodes.filter(n => n.selected);
+      if (nodesToCopy.length === 0) return;
+
+      // Only copy edges that connect two selected nodes
+      const selectedIds = new Set(nodesToCopy.map(n => n.id));
+      const edgesToCopy = edges.filter(e => selectedIds.has(e.source) && selectedIds.has(e.target));
+
+      setClipboard({ nodes: nodesToCopy, edges: edgesToCopy });
+      toast.success(`Copied ${nodesToCopy.length} nodes to clipboard`);
+  }, [nodes, edges]);
+
+  const pasteSelection = useCallback(() => {
+      if (!clipboard) return;
+
+      const newNodes: Node[] = [];
+      const idMap = new Map<string, string>();
+
+      // 1. Create new nodes with ID mapping and offset
+      clipboard.nodes.forEach(node => {
+          const newId = Math.random().toString();
+          idMap.set(node.id, newId);
+          
+          newNodes.push({
+              ...node,
+              id: newId,
+              position: { x: node.position.x + 50, y: node.position.y + 50 },
+              selected: true,
+              data: { ...node.data } // Shallow copy data
+          });
+      });
+
+      // 2. Create new edges using mapped IDs
+      const newEdges: Edge[] = clipboard.edges.map(edge => ({
+          ...edge,
+          id: Math.random().toString(),
+          source: idMap.get(edge.source)!,
+          target: idMap.get(edge.target)!,
+          selected: true
+      }));
+
+      // 3. Deselect current nodes
+      const deselectedNodes = nodes.map(n => ({ ...n, selected: false }));
+      const deselectedEdges = edges.map(e => ({ ...e, selected: false }));
+
+      // 4. Update State
+      setNodes([...deselectedNodes, ...newNodes]);
+      setEdges([...deselectedEdges, ...newEdges]);
+      
+      takeSnapshot(); // Record this action
+      toast.success("Pasted successfully");
+  }, [clipboard, nodes, edges, takeSnapshot]);
+
+  // Keyboard Shortcuts Listener
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (view !== 'canvas') return;
+
+          // Check if user is typing in an input/textarea
+          if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+          // Undo: Ctrl+Z
+          if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+              e.preventDefault();
+              undo();
+          }
+          // Redo: Ctrl+Y or Ctrl+Shift+Z
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+              e.preventDefault();
+              redo();
+          }
+          // Copy: Ctrl+C
+          if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+              e.preventDefault();
+              copySelection();
+          }
+          // Paste: Ctrl+V
+          if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+              e.preventDefault();
+              pasteSelection();
+          }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [view, undo, redo, copySelection, pasteSelection]);
+
+  // ---------------------------------------------------------------------------
   // NODE CONFIGURATION
   // ---------------------------------------------------------------------------
 
@@ -184,7 +335,7 @@ function DashboardInner() {
   }), []);
 
   // ---------------------------------------------------------------------------
-  // HANDLERS
+  // HANDLERS (React Flow)
   // ---------------------------------------------------------------------------
 
   const onNodeDataChange = useCallback((id: string, newData: any) => {
@@ -197,6 +348,7 @@ function DashboardInner() {
     }));
   }, []);
 
+  // Ensure nodes have the data change handler attached
   useEffect(() => {
     setNodes((nds) => nds.map(node => ({
         ...node,
@@ -206,6 +358,7 @@ function DashboardInner() {
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
       setNodes((nds) => applyNodeChanges(changes, nds));
+      // Track changes for dirty state (ignore selection changes)
       if (changes.some(c => c.type !== 'select')) setIsUnsaved(true);
   }, []);
 
@@ -221,17 +374,8 @@ function DashboardInner() {
           style: { stroke: '#a855f7', strokeWidth: 2 } 
       }, eds));
       setIsUnsaved(true);
-  }, []);
-
-  useOnSelectionChange({
-    onChange: ({ nodes }) => {
-        setSelectedNodes(nodes.map((node) => node.id));
-    },
-  });
-
-  // ---------------------------------------------------------------------------
-  // DRAG AND DROP HANDLERS (UPDATED)
-  // ---------------------------------------------------------------------------
+      takeSnapshot(); // Snapshot history on connect
+  }, [takeSnapshot]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     event.preventDefault();
@@ -242,13 +386,12 @@ function DashboardInner() {
     (event: React.DragEvent) => {
       event.preventDefault();
 
-      // --- CASE 1: DROP A JSON FILE ---
+      // Case 1: Dropping a JSON file (Import)
       if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
           const file = event.dataTransfer.files[0];
           
-          // Basic validation
           if (file.type !== "application/json" && !file.name.endsWith(".json")) {
-              toast.error("Invalid file type. Please drop a .json file.");
+              toast.error("Invalid file. Please drop a .json file.");
               return;
           }
 
@@ -256,49 +399,38 @@ function DashboardInner() {
           reader.onload = (e) => {
               try {
                   const flowData = JSON.parse(e.target?.result as string);
+                  if (!flowData.nodes || !flowData.edges) throw new Error("Invalid format");
 
-                  if (!flowData.nodes || !flowData.edges) {
-                      throw new Error("Invalid flow JSON: Missing nodes or edges.");
-                  }
-
-                  // Confirm overwrite if canvas isn't empty
-                  if (nodes.length > 0 && !confirm("This will overwrite your current flow. Continue?")) {
-                      return;
-                  }
-
-                  // Hydrate nodes (re-attach data handler)
                   const hydratedNodes = flowData.nodes.map((n: any) => ({
                       ...n,
                       data: { ...n.data, onChange: onNodeDataChange }
                   }));
 
-                  // Update State
                   setNodes(hydratedNodes);
                   setEdges(flowData.edges);
                   
-                  // Restore Viewport if available
                   if (flowData.viewport) {
-                      const { x, y, zoom } = flowData.viewport;
-                      setViewport({ x, y, zoom });
+                      setViewport(flowData.viewport);
                   }
 
-                  // Update Flow Metadata
-                  setFlowName(file.name.replace('.json', '')); // Use filename as title
-                  setCurrentFlowId(null); // Treat as new unsaved flow
+                  setFlowName(file.name.replace('.json', ''));
+                  setCurrentFlowId(null);
                   setIsUnsaved(true);
                   
+                  // Reset history with imported state
+                  setHistory([{ nodes: hydratedNodes, edges: flowData.edges }]);
+                  setHistoryIndex(0);
+                  
                   toast.success(`Imported "${file.name}"`);
-
               } catch (err) {
-                  console.error("Import failed:", err);
                   toast.error("Failed to parse flow file.");
               }
           };
           reader.readAsText(file);
-          return; // Stop execution here
+          return;
       }
 
-      // --- CASE 2: DROP A COMPONENT FROM SIDEBAR ---
+      // Case 2: Dropping a Component from Sidebar
       const type = event.dataTransfer.getData('application/reactflow');
       const label = event.dataTransfer.getData('application/label');
 
@@ -318,12 +450,27 @@ function DashboardInner() {
       
       setNodes((nds) => nds.concat(newNode));
       setIsUnsaved(true);
+      
+      // We will snapshot in onNodeDragStop instead of here to capture final position
+      // taking snapshot immediately here works too but might miss initial drag
+      takeSnapshot(); 
     },
-    [screenToFlowPosition, onNodeDataChange, nodes.length, setViewport]
+    [screenToFlowPosition, onNodeDataChange, takeSnapshot, setViewport]
   );
 
+  const onNodeDragStop = useCallback(() => {
+      takeSnapshot();
+  }, [takeSnapshot]);
+
+  // Track selection for delete logic
+  useOnSelectionChange({
+    onChange: ({ nodes }) => {
+        setSelectedNodes(nodes.map((node) => node.id));
+    },
+  });
+
   // ---------------------------------------------------------------------------
-  // ACTIONS
+  // PERSISTENCE & ACTIONS
   // ---------------------------------------------------------------------------
 
   const handleSaveFlow = async (silent = false) => {
@@ -372,6 +519,7 @@ function DashboardInner() {
       handleProtectedAction(() => {
           setFlowName(flow.name);
           setCurrentFlowId(flow.id);
+          
           const { nodes: savedNodes, edges: savedEdges, viewport } = flow.data;
           
           setNodes(savedNodes.map((n: any) => ({
@@ -380,10 +528,11 @@ function DashboardInner() {
           })));
           setEdges(savedEdges || []);
           
-          if (viewport) {
-              setViewport({ x: viewport.x, y: viewport.y, zoom: viewport.zoom });
-          }
+          if (viewport) setViewport(viewport);
 
+          setHistory([{ nodes: savedNodes, edges: savedEdges || [] }]);
+          setHistoryIndex(0);
+          
           setIsUnsaved(false);
           setView('canvas');
           toast.success(`Loaded "${flow.name}"`);
@@ -392,25 +541,34 @@ function DashboardInner() {
 
   const handleDeleteSelectedNodes = useCallback(() => {
       if (selectedNodes.length === 0) return;
+      
       deleteElements({ nodes: selectedNodes.map(id => ({ id })) });
       setIsUnsaved(true);
       toast.info(`Deleted ${selectedNodes.length} node(s)`);
+      
       const hasAgent = nodes.find(n => selectedNodes.includes(n.id) && n.type === 'agentNode');
       if (hasAgent) setChatResponse("");
+      
       setSelectedNodes([]);
-  }, [selectedNodes, deleteElements, nodes]);
+      takeSnapshot();
+  }, [selectedNodes, deleteElements, nodes, takeSnapshot]);
 
   const confirmDeleteFlow = async () => {
       if (!flowToDelete) return;
+      
       const id = flowToDelete;
       const previousFlows = [...savedFlows];
+      
+      // Optimistic update
       setSavedFlows(prev => prev.filter(flow => flow.id !== id));
       setFlowToDelete(null);
 
       try {
           const { error } = await supabase.from('flows').delete().eq('id', id);
           if (error) throw error;
+          
           toast.success("Flow deleted successfully");
+
           if (currentFlowId === id) {
               setFlowName("Untitled Flow");
               setCurrentFlowId(null);
@@ -434,6 +592,10 @@ function DashboardInner() {
       link.click();
       toast.success("Flow exported to JSON");
   };
+
+  // ---------------------------------------------------------------------------
+  // NAVIGATION GUARDS
+  // ---------------------------------------------------------------------------
 
   const handleProtectedAction = (action: () => void) => {
       if (isUnsaved) {
@@ -461,13 +623,14 @@ function DashboardInner() {
   };
 
   // ---------------------------------------------------------------------------
-  // EXECUTION
+  // EXECUTION LOGIC
   // ---------------------------------------------------------------------------
 
   const runFlow = async () => {
     setLoading(true);
     setChatResponse("");
     
+    // Validate Flow Structure
     const agentNode = nodes.find(n => n.type === 'agentNode');
     const modelNode = nodes.find(n => n.type === 'groqModel' || n.type === 'openaiModel');
     const customNode = nodes.find(n => n.type === 'customComponent');
@@ -477,6 +640,7 @@ function DashboardInner() {
         setLoading(false); return; 
     }
 
+    // Extract API Key
     let apiKey = "";
     if (modelNode) apiKey = (modelNode.data as any).apiKey;
     else if (agentNode) apiKey = (agentNode.data as any).groqApiKey || (agentNode.data as any).apiKey;
@@ -486,6 +650,7 @@ function DashboardInner() {
         setLoading(false); return; 
     }
 
+    // Extract OpenAI Key for RAG if needed
     let openaiKey = undefined;
     if (apiKey && apiKey.startsWith('sk-')) openaiKey = apiKey;
     else {
@@ -517,44 +682,53 @@ function DashboardInner() {
      handleProtectedAction(() => {
          setFlowName(`${type.charAt(0).toUpperCase() + type.slice(1)} Template`);
          setCurrentFlowId(null);
+         
          const commonData = { onChange: onNodeDataChange };
          
+         // Helper
+         const resetState = (nds: Node[], eds: Edge[]) => {
+             setNodes(nds);
+             setEdges(eds);
+             setHistory([{ nodes: nds, edges: eds }]);
+             setHistoryIndex(0);
+         };
+
          if (type === 'blank') { 
-             setNodes([]); 
-             setEdges([]); 
+             resetState([], []);
          } 
          else if (type === 'simple') {
-            setNodes([
+            const nds = [
                  { id: '1', type: 'agentNode', position: { x: 450, y: 150 }, data: { ...commonData } },
                  { id: '2', type: 'groqModel', position: { x: 100, y: 150 }, data: { ...commonData } }
-            ]);
-            setEdges([
-                { id: 'e2-1', source: '2', target: '1', animated: true, style: { stroke: '#a855f7' } }
-            ]);
+            ];
+            const eds = [{ id: 'e2-1', source: '2', target: '1', animated: true, style: { stroke: '#a855f7' } }];
+            resetState(nds, eds);
          }
          else if (type === 'agentic') {
-            setNodes([
+            const nds = [
                  { id: '1', type: 'agentNode', position: { x: 500, y: 100 }, data: { ...commonData } },
                  { id: '2', type: 'webSearchNode', position: { x: 100, y: 50 }, data: { ...commonData } },
                  { id: '3', type: 'gmailNode', position: { x: 100, y: 250 }, data: { ...commonData } }
-            ]);
-            setEdges([
+            ];
+            const eds = [
                 { id: 'e2-1', source: '2', target: '1', animated: true, style: { stroke: '#a855f7' } },
                 { id: 'e3-1', source: '3', target: '1', animated: true, style: { stroke: '#a855f7' } }
-            ]);
+            ];
+            resetState(nds, eds);
          }
          else if (type === 'rag') {
-             setNodes([
+             const nds = [
                 { id: '1', type: 'pdfLoader', position: { x: 50, y: 50 }, data: { ...commonData } },
                 { id: '2', type: 'textSplitter', position: { x: 300, y: 50 }, data: { ...commonData } },
                 { id: '3', type: 'vectorStore', position: { x: 550, y: 50 }, data: { ...commonData } },
                 { id: '4', type: 'agentNode', position: { x: 800, y: 150 }, data: { ...commonData } }
-             ]);
-             setEdges([
+             ];
+             const eds = [
                 { id: 'e1-2', source: '1', target: '2', animated: true, style: { stroke: '#f97316' } }, 
                 { id: 'e2-3', source: '2', target: '3', animated: true, style: { stroke: '#f97316' } },
                 { id: 'e3-4', source: '3', target: '4', animated: true, style: { stroke: '#a855f7' } }
-             ]);
+             ];
+             resetState(nds, eds);
          }
          
          setIsUnsaved(true);
@@ -572,8 +746,9 @@ function DashboardInner() {
   if (view === 'templates') {
       return (
         <div className="h-screen w-full bg-slate-950 flex overflow-hidden">
-             {/* Left: Saved Flows */}
-             <div className="w-80 bg-slate-950 border-r border-slate-800 flex flex-col z-20 shadow-xl">
+             
+             {/* Left Panel: Saved Flows */}
+             <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col z-20 shadow-xl">
                 <div className="p-5 border-b border-slate-800 bg-slate-900/50">
                     <h2 className="font-bold text-white flex items-center gap-2 mb-4">
                         <Database className="w-4 h-4 text-purple-400" /> Saved Projects
@@ -589,6 +764,7 @@ function DashboardInner() {
                         />
                     </div>
                 </div>
+                
                 <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
                     {filteredFlows.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-40 text-slate-600">
@@ -627,6 +803,7 @@ function DashboardInner() {
                         ))
                     )}
                 </div>
+                
                 <div className="p-4 border-t border-slate-800 bg-slate-900/30">
                     <button 
                         onClick={async () => { await supabase.auth.signOut(); router.push('/login'); }} 
@@ -638,7 +815,7 @@ function DashboardInner() {
                 </div>
              </div>
 
-             {/* Right: Templates */}
+             {/* Right Panel: Templates */}
              <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden bg-slate-950">
                  <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10"></div>
                  <div className="z-10 text-center max-w-5xl px-6 w-full">
@@ -765,6 +942,26 @@ function DashboardInner() {
             </div>
 
             <div className="flex items-center gap-2">
+                {/* TOOLBAR: Undo / Redo */}
+                <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1 mr-2">
+                    <button 
+                        onClick={undo} 
+                        disabled={historyIndex === 0}
+                        className={`p-1.5 rounded transition-colors ${historyIndex === 0 ? 'text-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                        title="Undo (Ctrl+Z)"
+                    >
+                        <Undo size={14}/>
+                    </button>
+                    <button 
+                        onClick={redo} 
+                        disabled={historyIndex >= history.length - 1}
+                        className={`p-1.5 rounded transition-colors ${historyIndex >= history.length - 1 ? 'text-slate-700' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                        title="Redo (Ctrl+Y)"
+                    >
+                        <Redo size={14}/>
+                    </button>
+                </div>
+
                 {/* Delete Button for Selected Nodes */}
                 {selectedNodes.length > 0 && (
                     <button 
@@ -813,14 +1010,11 @@ function DashboardInner() {
                 {/* Canvas */}
                 <ResizablePanels.Panel minSize={30}>
                     <div className="w-full h-full relative bg-slate-900" ref={reactFlowWrapper}>
-                        {/* 
-                            DROP ZONE OVERLAY 
-                            (Optional Visual Indicator for Drag and Drop)
-                        */}
                         <ReactFlow
                             nodes={nodes} edges={edges}
                             onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
                             onConnect={onConnect}
+                            onNodeDragStop={onNodeDragStop}
                             deleteKeyCode={['Backspace', 'Delete']}
                             onDragOver={onDragOver} onDrop={onDrop}
                             nodeTypes={nodeTypes}
