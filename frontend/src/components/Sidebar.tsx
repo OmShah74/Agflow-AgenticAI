@@ -31,6 +31,7 @@ export const nodeCategories = {
     { type: 'vectorStore', label: 'Supabase Vector', icon: Database, desc: "Knowledge Base" },
   ],
   'Helpers': [
+    { type: 'customComponent', label: 'Custom Component', icon: Code, desc: "Python Script" },
     { type: 'chatMemory', label: 'Chat Memory', icon: BrainCircuit, desc: "Session history" },
     { type: 'htmlRenderer', label: 'HTML Renderer', icon: Code, desc: "Visualize HTML" },
   ]

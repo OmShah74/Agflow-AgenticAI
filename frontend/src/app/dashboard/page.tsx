@@ -62,6 +62,7 @@ import BaseNode from '@/components/nodes/BaseNode';
 // --- Node Components ---
 import AgentNode from '@/components/nodes/AgentNode';
 import GmailNode from '@/components/nodes/GmailNode';
+import CustomComponentNode from '@/components/nodes/CustomComponentNode';
 import WebSearchNode from '@/components/nodes/WebSearchNode';
 import GroqModelNode from '@/components/nodes/GroqModelNode';
 import PdfLoaderNode from '@/components/nodes/PdfLoaderNode';
@@ -179,6 +180,7 @@ function DashboardInner() {
     chatOutput: ChatOutputNode as any,
     textInput: TextInputNode as any,
     promptTemplate: PromptTemplateNode as any,
+    customComponent: CustomComponentNode as any,
     promptBuilder: PromptBuilderNode as any,
     chatMemory: ChatMemoryNode as any,
     htmlRenderer: HTMLRendererNode as any,
