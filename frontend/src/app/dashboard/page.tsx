@@ -62,7 +62,6 @@ import BaseNode from '@/components/nodes/BaseNode';
 // --- Node Components ---
 import AgentNode from '@/components/nodes/AgentNode';
 import GmailNode from '@/components/nodes/GmailNode';
-import CustomComponentNode from '@/components/nodes/CustomComponentNode';
 import WebSearchNode from '@/components/nodes/WebSearchNode';
 import GroqModelNode from '@/components/nodes/GroqModelNode';
 import PdfLoaderNode from '@/components/nodes/PdfLoaderNode';
@@ -75,6 +74,7 @@ import PromptTemplateNode from '@/components/nodes/PromptTemplateNode';
 import TextSplitterNode from '@/components/nodes/TextSplitterNode';
 import ChatMemoryNode from '@/components/nodes/ChatMemoryNode';
 import HTMLRendererNode from '@/components/nodes/HTMLRendererNode';
+import CustomComponentNode from '@/components/nodes/CustomComponentNode'; // Ensure this is imported
 
 // Placeholder for future components
 const PlaceholderNode = ({ data }: any) => (
@@ -102,35 +102,29 @@ function DashboardInner() {
   // STATE MANAGEMENT
   // ---------------------------------------------------------------------------
   
-  // View State
   const [view, setView] = useState<'templates' | 'canvas'>('templates');
-  
-  // React Flow State
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
   
-  // Playground / Execution State
   const [chatInput, setChatInput] = useState("");
   const [chatResponse, setChatResponse] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPlayground, setShowPlayground] = useState(true);
 
-  // Persistence (Supabase) State
   const [flowName, setFlowName] = useState("Untitled Flow");
   const [currentFlowId, setCurrentFlowId] = useState<string | null>(null);
   const [savedFlows, setSavedFlows] = useState<any[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [flowSearch, setFlowSearch] = useState("");
 
-  // UI Dialog States
   const [isUnsaved, setIsUnsaved] = useState(false);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [flowToDelete, setFlowToDelete] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
-  // INITIALIZATION & DATA FETCHING
+  // INITIALIZATION
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
@@ -161,31 +155,22 @@ function DashboardInner() {
   // ---------------------------------------------------------------------------
 
   const nodeTypes = useMemo(() => ({
-    // Core Logic
     agentNode: AgentNode as any,
     groqModel: GroqModelNode as any,
     openaiModel: GroqModelNode as any,
-    
-    // Tools
     gmailNode: GmailNode as any,
     webSearchNode: WebSearchNode as any,
-    
-    // RAG & Data
     pdfLoader: PdfLoaderNode as any,
     vectorStore: VectorStoreNode as any,
     textSplitter: TextSplitterNode as any,
-    
-    // Input / Output / Helpers
     chatInput: ChatInputNode as any,
     chatOutput: ChatOutputNode as any,
     textInput: TextInputNode as any,
     promptTemplate: PromptTemplateNode as any,
-    customComponent: CustomComponentNode as any,
     promptBuilder: PromptBuilderNode as any,
     chatMemory: ChatMemoryNode as any,
     htmlRenderer: HTMLRendererNode as any,
-
-    // Placeholders
+    customComponent: CustomComponentNode as any, // Registered Custom Node
     ollamaModel: PlaceholderNode,
     fileLoader: PdfLoaderNode as any,
     textOutput: TextInputNode as any,
@@ -197,7 +182,7 @@ function DashboardInner() {
   }), []);
 
   // ---------------------------------------------------------------------------
-  // FLOW HANDLERS (Change, Connect, Drop)
+  // HANDLERS
   // ---------------------------------------------------------------------------
 
   const onNodeDataChange = useCallback((id: string, newData: any) => {
@@ -210,7 +195,6 @@ function DashboardInner() {
     }));
   }, []);
 
-  // Hydrate onChange handler for loaded nodes
   useEffect(() => {
     setNodes((nds) => nds.map(node => ({
         ...node,
@@ -267,7 +251,6 @@ function DashboardInner() {
     [screenToFlowPosition, onNodeDataChange]
   );
 
-  // Track selection for delete button logic
   useOnSelectionChange({
     onChange: ({ nodes }) => {
         setSelectedNodes(nodes.map((node) => node.id));
@@ -275,12 +258,11 @@ function DashboardInner() {
   });
 
   // ---------------------------------------------------------------------------
-  // SAVE / LOAD / DELETE LOGIC
+  // ACTIONS
   // ---------------------------------------------------------------------------
 
   const handleSaveFlow = async (silent = false) => {
     if (!userId) return false;
-    
     if (!silent) toast.loading("Saving flow...");
     
     const flowObject = toObject();
@@ -291,21 +273,17 @@ function DashboardInner() {
     };
 
     let error;
-    
     if (currentFlowId) {
-        // Update existing flow
         const { error: err } = await supabase
             .from('flows')
             .update({ name: flowName, data: flowObject })
             .eq('id', currentFlowId);
         error = err;
     } else {
-        // Create new flow
         const { data, error: err } = await supabase
             .from('flows')
             .insert(flowData)
             .select();
-            
         if (data) setCurrentFlowId(data[0].id);
         error = err;
     }
@@ -326,18 +304,14 @@ function DashboardInner() {
   };
 
   const handleLoadFlow = (flow: any) => {
-      // Guard against unsaved changes
       handleProtectedAction(() => {
           setFlowName(flow.name);
           setCurrentFlowId(flow.id);
-          
           const { nodes: savedNodes, edges: savedEdges } = flow.data;
-          
           setNodes(savedNodes.map((n: any) => ({
               ...n,
               data: { ...n.data, onChange: onNodeDataChange }
           })));
-          
           setEdges(savedEdges || []);
           setIsUnsaved(false);
           setView('canvas');
@@ -345,26 +319,19 @@ function DashboardInner() {
       });
   };
 
-  // Logic to delete specific nodes from canvas
   const handleDeleteSelectedNodes = useCallback(() => {
       if (selectedNodes.length === 0) return;
-      
       deleteElements({ nodes: selectedNodes.map(id => ({ id })) });
       setIsUnsaved(true);
       toast.info(`Deleted ${selectedNodes.length} node(s)`);
-      
       const hasAgent = nodes.find(n => selectedNodes.includes(n.id) && n.type === 'agentNode');
       if (hasAgent) setChatResponse("");
-      
       setSelectedNodes([]);
   }, [selectedNodes, deleteElements, nodes]);
 
-  // Logic to delete a saved flow (DB)
   const confirmDeleteFlow = async () => {
       if (!flowToDelete) return;
-      
       const id = flowToDelete;
-      // Optimistic update
       const previousFlows = [...savedFlows];
       setSavedFlows(prev => prev.filter(flow => flow.id !== id));
       setFlowToDelete(null);
@@ -372,10 +339,7 @@ function DashboardInner() {
       try {
           const { error } = await supabase.from('flows').delete().eq('id', id);
           if (error) throw error;
-          
           toast.success("Flow deleted successfully");
-
-          // Reset if we deleted the current active flow
           if (currentFlowId === id) {
               setFlowName("Untitled Flow");
               setCurrentFlowId(null);
@@ -386,25 +350,19 @@ function DashboardInner() {
       } catch (error) {
           console.error("Delete failed:", error);
           toast.error("Could not delete flow from database.");
-          setSavedFlows(previousFlows); // Revert
+          setSavedFlows(previousFlows);
       }
   };
 
   const handleDownloadJson = () => {
       const flowObject = toObject();
-      const jsonString = `data:text/json;chatset=utf-8,${encodeURIComponent(
-        JSON.stringify(flowObject, null, 2)
-      )}`;
+      const jsonString = `data:text/json;chatset=utf-8,${encodeURIComponent(JSON.stringify(flowObject, null, 2))}`;
       const link = document.createElement("a");
       link.href = jsonString;
       link.download = `${flowName.replace(/\s+/g, '_')}.json`;
       link.click();
       toast.success("Flow exported to JSON");
   };
-
-  // ---------------------------------------------------------------------------
-  // UNSAVED CHANGES GUARD
-  // ---------------------------------------------------------------------------
 
   const handleProtectedAction = (action: () => void) => {
       if (isUnsaved) {
@@ -432,32 +390,36 @@ function DashboardInner() {
   };
 
   // ---------------------------------------------------------------------------
-  // EXECUTION LOGIC (Backend)
+  // EXECUTION
   // ---------------------------------------------------------------------------
 
   const runFlow = async () => {
     setLoading(true);
     setChatResponse("");
     
+    // Check for Agent, Model, or Custom Component
     const agentNode = nodes.find(n => n.type === 'agentNode');
     const modelNode = nodes.find(n => n.type === 'groqModel' || n.type === 'openaiModel');
+    const customNode = nodes.find(n => n.type === 'customComponent'); // Allow custom only flow
     
-    if (!agentNode && !modelNode) { 
-        toast.error("Invalid Flow: Add an Agent or Model node."); 
+    if (!agentNode && !modelNode && !customNode) { 
+        toast.error("Invalid Flow: Add an Agent, Model, or Custom Component."); 
         setLoading(false); return; 
     }
 
+    // Try to get API Key (Naive search for now)
     let apiKey = "";
     if (modelNode) apiKey = (modelNode.data as any).apiKey;
     else if (agentNode) apiKey = (agentNode.data as any).groqApiKey || (agentNode.data as any).apiKey;
-
-    if (!apiKey) { 
+    
+    // If running pure custom node, maybe key is not needed or embedded, but we send if found
+    if (!apiKey && (agentNode || modelNode)) { 
         toast.error("Missing API Key in Agent/Model node."); 
         setLoading(false); return; 
     }
 
     let openaiKey = undefined;
-    if (apiKey.startsWith('sk-')) openaiKey = apiKey;
+    if (apiKey && apiKey.startsWith('sk-')) openaiKey = apiKey;
     else {
         const openaiNode = nodes.find(n => n.type === 'openaiModel' && (n.data as any).apiKey);
         if (openaiNode) openaiKey = (openaiNode.data as any).apiKey;
@@ -483,15 +445,10 @@ function DashboardInner() {
     setLoading(false);
   };
 
-  // ---------------------------------------------------------------------------
-  // TEMPLATE LOGIC
-  // ---------------------------------------------------------------------------
-
   const loadTemplate = (type: string) => {
      handleProtectedAction(() => {
          setFlowName(`${type.charAt(0).toUpperCase() + type.slice(1)} Template`);
          setCurrentFlowId(null);
-         
          const commonData = { onChange: onNodeDataChange };
          
          if (type === 'blank') { 
@@ -541,15 +498,14 @@ function DashboardInner() {
   const filteredFlows = savedFlows.filter(f => f.name.toLowerCase().includes(flowSearch.toLowerCase()));
 
   // ---------------------------------------------------------------------------
-  // VIEW: TEMPLATES / LANDING
+  // VIEW RENDER
   // ---------------------------------------------------------------------------
 
   if (view === 'templates') {
       return (
         <div className="h-screen w-full bg-slate-950 flex overflow-hidden">
-             
-             {/* Left Panel: Saved Flows */}
-             <div className="w-80 bg-slate-950 border-r border-slate-800 flex flex-col z-20 shadow-xl">
+             {/* Left: Saved Flows */}
+             <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col z-20 shadow-xl">
                 <div className="p-5 border-b border-slate-800 bg-slate-900/50">
                     <h2 className="font-bold text-white flex items-center gap-2 mb-4">
                         <Database className="w-4 h-4 text-purple-400" /> Saved Projects
@@ -561,10 +517,10 @@ function DashboardInner() {
                             className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-xs text-slate-300 focus:border-purple-500 outline-none transition-all"
                             value={flowSearch}
                             onChange={(e) => setFlowSearch(e.target.value)}
+                            suppressHydrationWarning // Fix hydration error from extensions
                         />
                     </div>
                 </div>
-                
                 <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
                     {filteredFlows.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-40 text-slate-600">
@@ -590,8 +546,12 @@ function DashboardInner() {
                                     </div>
                                 </div>
                                 <button 
-                                    onClick={(e) => { e.stopPropagation(); setFlowToDelete(flow.id); }} 
+                                    onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        setFlowToDelete(flow.id); 
+                                    }} 
                                     className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-900/30 text-slate-500 hover:text-red-400 rounded transition-all"
+                                    suppressHydrationWarning
                                 >
                                     <Trash2 size={14} />
                                 </button>
@@ -599,18 +559,18 @@ function DashboardInner() {
                         ))
                     )}
                 </div>
-                
                 <div className="p-4 border-t border-slate-800 bg-slate-900/30">
                     <button 
                         onClick={async () => { await supabase.auth.signOut(); router.push('/login'); }} 
                         className="flex w-full items-center justify-center gap-2 px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-xs text-slate-400 hover:text-white transition-colors border border-slate-800"
+                        suppressHydrationWarning
                     >
                         <LogOut size={14} /> Sign Out
                     </button>
                 </div>
              </div>
 
-             {/* Right Panel: Templates Grid */}
+             {/* Right: Templates */}
              <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden bg-slate-950">
                  <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10"></div>
                  <div className="z-10 text-center max-w-5xl px-6 w-full">
@@ -625,7 +585,7 @@ function DashboardInner() {
                     </div>
 
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-5 w-full max-w-4xl mx-auto">
-                        <button onClick={() => loadTemplate('blank')} className="group p-6 bg-slate-900/40 border border-slate-800 rounded-2xl hover:border-purple-500/50 hover:bg-slate-800/60 transition-all text-left backdrop-blur-sm shadow-sm hover:shadow-purple-900/10">
+                        <button onClick={() => loadTemplate('blank')} className="group p-6 bg-slate-900/40 border border-slate-800 rounded-2xl hover:border-purple-500/50 hover:bg-slate-800/60 transition-all text-left backdrop-blur-sm shadow-sm hover:shadow-purple-900/10" suppressHydrationWarning>
                             <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center mb-4 group-hover:bg-purple-900/30 transition-colors">
                                 <Box className="text-purple-400" />
                             </div>
@@ -633,7 +593,7 @@ function DashboardInner() {
                             <p className="text-xs text-slate-500">Start from scratch.</p>
                         </button>
 
-                        <button onClick={() => loadTemplate('simple')} className="group p-6 bg-slate-900/40 border border-slate-800 rounded-2xl hover:border-green-500/50 hover:bg-slate-800/60 transition-all text-left backdrop-blur-sm shadow-sm hover:shadow-green-900/10">
+                        <button onClick={() => loadTemplate('simple')} className="group p-6 bg-slate-900/40 border border-slate-800 rounded-2xl hover:border-green-500/50 hover:bg-slate-800/60 transition-all text-left backdrop-blur-sm shadow-sm hover:shadow-green-900/10" suppressHydrationWarning>
                             <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center mb-4 group-hover:bg-green-900/30 transition-colors">
                                 <Sparkles className="text-green-400" />
                             </div>
@@ -641,7 +601,7 @@ function DashboardInner() {
                             <p className="text-xs text-slate-500">Basic inference.</p>
                         </button>
 
-                        <button onClick={() => loadTemplate('agentic')} className="group p-6 bg-slate-900/40 border border-slate-800 rounded-2xl hover:border-blue-500/50 hover:bg-slate-800/60 transition-all text-left backdrop-blur-sm shadow-sm hover:shadow-blue-900/10">
+                        <button onClick={() => loadTemplate('agentic')} className="group p-6 bg-slate-900/40 border border-slate-800 rounded-2xl hover:border-blue-500/50 hover:bg-slate-800/60 transition-all text-left backdrop-blur-sm shadow-sm hover:shadow-blue-900/10" suppressHydrationWarning>
                             <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center mb-4 group-hover:bg-blue-900/30 transition-colors">
                                 <Bot className="text-blue-400" />
                             </div>
@@ -649,7 +609,7 @@ function DashboardInner() {
                             <p className="text-xs text-slate-500">Web Search + Tools.</p>
                         </button>
 
-                        <button onClick={() => loadTemplate('rag')} className="group p-6 bg-slate-900/40 border border-slate-800 rounded-2xl hover:border-orange-500/50 hover:bg-slate-800/60 transition-all text-left backdrop-blur-sm shadow-sm hover:shadow-orange-900/10">
+                        <button onClick={() => loadTemplate('rag')} className="group p-6 bg-slate-900/40 border border-slate-800 rounded-2xl hover:border-orange-500/50 hover:bg-slate-800/60 transition-all text-left backdrop-blur-sm shadow-sm hover:shadow-orange-900/10" suppressHydrationWarning>
                             <div className="w-10 h-10 bg-slate-800 rounded-lg flex items-center justify-center mb-4 group-hover:bg-orange-900/30 transition-colors">
                                 <Database className="text-orange-400" />
                             </div>
@@ -660,34 +620,7 @@ function DashboardInner() {
                  </div>
              </div>
              
-             {/* DIALOGS */}
-             
-             {/* 1. Unsaved Changes */}
-             <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
-                <AlertDialogContent className="bg-slate-900 border-slate-800 text-slate-200">
-                    <AlertDialogHeader>
-                        <AlertDialogTitle className="text-white flex items-center gap-2">
-                            <AlertTriangle className="text-yellow-500" /> Unsaved Changes
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                            You have unsaved changes in your current flow. What would you like to do?
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel onClick={() => setShowUnsavedDialog(false)} className="bg-transparent border-slate-700 hover:bg-slate-800 text-slate-400">
-                            Cancel
-                        </AlertDialogCancel>
-                        <AlertDialogAction onClick={confirmDiscard} className="bg-red-900/50 text-red-200 hover:bg-red-900 border border-red-900">
-                            Discard Changes
-                        </AlertDialogAction>
-                        <AlertDialogAction onClick={confirmSaveAndProceed} className="bg-purple-600 hover:bg-purple-700 text-white">
-                            Save & Continue
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-             </AlertDialog>
-
-             {/* 2. Delete Confirmation */}
+             {/* Delete Confirmation Dialog */}
              <AlertDialog open={!!flowToDelete} onOpenChange={(open) => !open && setFlowToDelete(null)}>
                 <AlertDialogContent className="bg-slate-900 border-slate-800 text-slate-200">
                     <AlertDialogHeader>
@@ -704,6 +637,31 @@ function DashboardInner() {
                         </AlertDialogCancel>
                         <AlertDialogAction onClick={confirmDeleteFlow} className="bg-red-600 hover:bg-red-700 text-white border-none">
                             Delete Permanently
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+             </AlertDialog>
+
+             {/* Unsaved Changes Dialog (Templates) */}
+             <AlertDialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+                <AlertDialogContent className="bg-slate-900 border-slate-800 text-slate-200">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="text-white flex items-center gap-2">
+                            <AlertTriangle className="text-yellow-500" /> Unsaved Changes
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                            You have unsaved changes in your current flow. What would you like to do?
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel onClick={() => setShowUnsavedDialog(false)} className="bg-transparent border-slate-700 hover:bg-slate-800 text-slate-400">
+                            Cancel
+                        </AlertDialogCancel>
+                        <AlertDialogAction onClick={confirmDiscard} className="bg-red-900/50 text-red-200 hover:bg-red-900 border border-red-900">
+                            Discard
+                        </AlertDialogAction>
+                        <AlertDialogAction onClick={confirmSaveAndProceed} className="bg-purple-600 hover:bg-purple-700 text-white">
+                            Save & Continue
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
@@ -732,6 +690,7 @@ function DashboardInner() {
                         onChange={(e) => { setFlowName(e.target.value); setIsUnsaved(true); }}
                         className="bg-transparent text-slate-200 font-medium text-sm focus:outline-none w-32 md:w-48 placeholder:text-slate-600"
                         placeholder="Name your flow..."
+                        suppressHydrationWarning
                     />
                     {isUnsaved && <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" title="Unsaved changes"></div>}
                  </div>
@@ -743,6 +702,7 @@ function DashboardInner() {
                     <button 
                         onClick={handleDeleteSelectedNodes}
                         className="flex items-center gap-2 px-3 py-1.5 bg-red-900/20 hover:bg-red-900/40 border border-red-900/50 text-red-400 text-xs font-medium rounded transition-all animate-in fade-in"
+                        suppressHydrationWarning
                     >
                         <Trash2 size={14} /> Delete ({selectedNodes.length})
                     </button>
@@ -750,11 +710,11 @@ function DashboardInner() {
 
                 <KnowledgeBaseModal /> 
                 
-                <button onClick={() => handleSaveFlow()} className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-medium rounded transition-all">
+                <button onClick={() => handleSaveFlow()} className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-medium rounded transition-all" suppressHydrationWarning>
                     <Save size={14} /> Save
                 </button>
                 
-                <button onClick={handleDownloadJson} className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-medium rounded transition-all">
+                <button onClick={handleDownloadJson} className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-medium rounded transition-all" suppressHydrationWarning>
                     <Download size={14} /> Export
                 </button>
                 
@@ -764,6 +724,7 @@ function DashboardInner() {
                     onClick={() => setShowPlayground(!showPlayground)} 
                     className={`p-2 rounded transition-colors ${showPlayground ? 'text-purple-400 bg-purple-900/20 ring-1 ring-purple-500/50' : 'text-slate-400 hover:text-white'}`}
                     title="Toggle Playground"
+                    suppressHydrationWarning
                 >
                     {showPlayground ? <PanelRightOpen size={18} /> : <PanelRightClose size={18} />}
                 </button>
@@ -851,6 +812,7 @@ function DashboardInner() {
                                             placeholder="Type message..."
                                             value={chatInput} onChange={(e) => setChatInput(e.target.value)}
                                             onKeyDown={(e) => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runFlow(); } }}
+                                            suppressHydrationWarning
                                         />
                                         <button 
                                             onClick={runFlow} disabled={loading}
@@ -859,6 +821,7 @@ function DashboardInner() {
                                                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
                                                 : 'bg-purple-600 text-white hover:bg-purple-500 hover:scale-105 shadow-lg shadow-purple-900/20'
                                             }`}
+                                            suppressHydrationWarning
                                         >
                                             <Play size={16} fill="currentColor" />
                                         </button>
@@ -878,7 +841,7 @@ function DashboardInner() {
                             <AlertTriangle className="text-yellow-500" /> Unsaved Changes
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                            You have unsaved changes. What would you like to do?
+                            You have unsaved changes in your current flow. What would you like to do?
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
