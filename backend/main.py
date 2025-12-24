@@ -10,10 +10,15 @@ from pydantic import BaseModel
 from models import FlowRequest
 from executor import FlowExecutor
 from rag_manager import RAGManager # Added to ensure RAG works
+from supabase import create_client, Client
 
 # Initialize App
 app = FastAPI()
 
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+DB_URL = os.getenv("DB_URL")
 # Data Models
 class ProcessDocRequest(BaseModel):
     file_path: str
@@ -104,6 +109,22 @@ async def run_flow(request: FlowRequest):
     except Exception as e:
         import traceback
         traceback.print_exc() 
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/logs/{user_id}")
+async def get_logs(user_id: str):
+    if not supabase:
+        return {"error": "Supabase not configured"}
+    
+    try:
+        response = supabase.table("run_logs")\
+            .select("*")\
+            .eq("user_id", user_id)\
+            .order("timestamp", desc=True)\
+            .limit(50)\
+            .execute()
+        return response.data
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
