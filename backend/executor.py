@@ -4,7 +4,11 @@ from typing import Dict, Any, List
 import traceback
 import json
 from datetime import datetime
-from supabase import create_client, Client 
+from supabase import create_client, Client
+from dotenv import load_dotenv # NEW IMPORT
+
+# 1. Load Environment Variables explicitly
+load_dotenv()
 
 # --- Agno Framework Imports ---
 from agno.agent import Agent
@@ -13,7 +17,6 @@ from agno.models.openai import OpenAIChat
 from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.tools.yfinance import YFinanceTools
 
-# --- Local Imports ---
 try:
     from tools import SimpleGmailTools 
 except ImportError:
@@ -25,6 +28,12 @@ from rag_manager import RAGManager
 DB_URL = os.getenv("DB_URL")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# DEBUG PRINT: Check if keys are loaded
+print("--- BACKEND CONFIG CHECK ---")
+print(f"SUPABASE_URL Found: {bool(SUPABASE_URL)}")
+print(f"SUPABASE_KEY Found: {bool(SUPABASE_KEY)}")
+print("----------------------------")
 
 class FlowExecutor:
     def __init__(self, flow_data, user_keys: Dict[str, str]):
@@ -52,8 +61,18 @@ class FlowExecutor:
     # LOGGING
     # ------------------------------------------------------------------
     def log_execution(self, node_id, node_type, inputs, output, status="success"):
-        """Writes execution details to Supabase."""
-        if not self.supabase or not self.user_id: return
+        """Writes execution details to Supabase with DEBUGGING."""
+        
+        # --- DEBUG CHECKS ---
+        if not self.supabase:
+            print("❌ LOGGING FAILED: Backend SUPABASE_URL or SUPABASE_KEY is missing in .env")
+            return
+        
+        if not self.user_id: 
+            print("❌ LOGGING FAILED: No 'user_id' received from Frontend. Check if user is logged in.")
+            return
+
+        print(f"📝 Attempting to log execution for User: {self.user_id}...")
 
         try:
             log_entry = {
@@ -62,13 +81,18 @@ class FlowExecutor:
                 "node_id": node_id,
                 "node_type": node_type,
                 "inputs": inputs, 
-                "outputs": str(output)[:2000], # Truncate large outputs
+                "outputs": str(output)[:2000], 
                 "status": status,
                 "timestamp": datetime.now().isoformat()
             }
+            
+            # Execute Insert
             self.supabase.table("run_logs").insert(log_entry).execute()
+            print(f"✅ LOG SUCCESS: Saved log for {node_type}")
+            
         except Exception as e:
-            print(f"Logging failed: {e}")
+            print(f"❌ LOGGING ERROR: {str(e)}")
+            # Common error: Table doesn't exist or RLS issue
 
     # ------------------------------------------------------------------
     # GRAPH & RESOURCES
