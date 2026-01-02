@@ -40,26 +40,20 @@ class FlowExecutor:
         self.rag_manager = None
         self.execution_cache = {}
         
-        # Initialize Supabase
+        # Initialize Supabase for logging
         self.supabase: Client = None
         if SUPABASE_URL and SUPABASE_KEY:
             try:
                 self.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-                print("✅ Executor: Supabase connected for logging.")
             except Exception as e:
-                print(f"❌ Executor: Supabase Connection Failed: {e}")
-        else:
-            print("⚠️ Executor: SUPABASE_URL or SUPABASE_KEY missing in backend/.env. Logging Disabled.")
+                print(f"Supabase Init Error: {e}")
 
+    # ------------------------------------------------------------------
+    # LOGGING
+    # ------------------------------------------------------------------
     def log_execution(self, node_id, node_type, inputs, output, status="success"):
         """Writes execution details to Supabase."""
-        if not self.supabase:
-            print(f"⚠️ Skipping Log (No Supabase): {node_type}")
-            return
-        
-        if not self.user_id: 
-            print(f"⚠️ Skipping Log (No User ID): {node_type}")
-            return
+        if not self.supabase or not self.user_id: return
 
         try:
             log_entry = {
@@ -68,15 +62,13 @@ class FlowExecutor:
                 "node_id": node_id,
                 "node_type": node_type,
                 "inputs": inputs, 
-                "outputs": str(output)[:2000], 
+                "outputs": str(output)[:2000], # Truncate large outputs
                 "status": status,
                 "timestamp": datetime.now().isoformat()
             }
             self.supabase.table("run_logs").insert(log_entry).execute()
-            print(f"📝 Log Saved: {node_type} ({status})")
-            
         except Exception as e:
-            print(f"❌ Logging Insert Failed: {e}")
+            print(f"Logging failed: {e}")
 
     # ------------------------------------------------------------------
     # GRAPH & RESOURCES
@@ -95,33 +87,12 @@ class FlowExecutor:
         for node in self.nodes.values():
             G.add_node(node.id, type=node.type, config=node.data)
         for edge in self.edges:
-            # We map target_handle to correctly route inputs for custom nodes
             G.add_edge(edge.source, edge.target, target_handle=edge.targetHandle)
         return G
 
     # ------------------------------------------------------------------
     # INPUT RESOLUTION
     # ------------------------------------------------------------------
-    def resolve_node_input(self, node_id, arg_name=None):
-        """Finds executed result of a predecessor node."""
-        predecessors = list(self.graph.in_edges(node_id, data=True))
-        
-        # 1. Match specific handle (for Custom Components)
-        if arg_name:
-            for u, v, data in predecessors:
-                if data.get('target_handle') == arg_name:
-                    return self.execute_node(u)
-        
-        # 2. Match generic dependencies (Model -> Agent)
-        results = []
-        for u, v, data in predecessors:
-            res = self.execute_node(u)
-            if res is not None:
-                results.append(res)
-        
-        if not results: return None
-        return results[0] if len(results) == 1 else results
-
     def resolve_all_inputs(self, node_id):
         """Map all incoming edges to their target handle names."""
         inputs = {}
@@ -156,9 +127,7 @@ class FlowExecutor:
             status = "error"
             result = str(e)
             traceback.print_exc()
-            # Don't re-raise here if we want to log the error, 
-            # but usually better to let the main loop handle it.
-            # We return the error string so the flow can continue or fail gracefully.
+            raise e # Raise to top level to show in UI
         
         finally:
             self.log_execution(node_id, node.type, inputs_log, result, status)
@@ -201,7 +170,7 @@ class FlowExecutor:
         data = node.data
         node_type = node.type
 
-        # Models
+        # 1. Models
         if node_type == 'groqModel':
             key = data.get('apiKey') or self.keys.get('groq_api_key')
             return Groq(id=data.get('model', "llama-3.3-70b-versatile"), api_key=key)
@@ -210,48 +179,50 @@ class FlowExecutor:
             key = data.get('apiKey') or self.keys.get('openai_api_key')
             return OpenAIChat(id=data.get('model', "gpt-4o"), api_key=key)
 
-        # Tools
+        # 2. Tools
         if node_type == 'webSearchNode': return DuckDuckGoTools()
         if node_type == 'gmailNode':
             return SimpleGmailTools(sender_email=data.get('email'), app_password=data.get('password')) if SimpleGmailTools else None
 
-        # Agents
+        # 3. Agents (FIXED LOGIC HERE)
         if node_type == 'agentNode':
-            model = self.resolve_node_input(node.id)
-            # Find tools in predecessors
-            tools = []
+            # Collect ALL predecessors executed
+            predecessors_results = []
             for u in self.graph.predecessors(node.id):
                 res = self.execute_node(u)
-                # Naive check for tools
-                if hasattr(res, 'register') or isinstance(res, DuckDuckGoTools) or isinstance(res, YFinanceTools):
-                    tools.append(res)
-            
-            # RAG Knowledge Base
-            knowledge = None
-            # Check if any predecessor returned a Knowledge object (from VectorStore node)
-            for u in self.graph.predecessors(node.id):
-                res = self.execute_node(u)
-                # Check for Agno Knowledge Base type (or duck typing)
-                if hasattr(res, 'vector_db') or hasattr(res, 'search'): 
-                    knowledge = res
+                if res: predecessors_results.append(res)
 
+            # INTELLIGENT SORTING
+            model = None
+            tools = []
+            knowledge = None
+
+            for res in predecessors_results:
+                # Check if it's a Model
+                if isinstance(res, (Groq, OpenAIChat)):
+                    model = res
+                # Check if it's a Tool (DuckDuckGo, etc)
+                elif hasattr(res, 'register') or isinstance(res, (DuckDuckGoTools, YFinanceTools)):
+                    tools.append(res)
+                # Check if it's a Knowledge Base
+                elif hasattr(res, 'vector_db') or hasattr(res, 'search'):
+                    knowledge = res
+            
+            # If no model found, we rely on Agno default or error out
+            # To fix your specific error, we ensure model is passed if found
             return Agent(
-                model=model if hasattr(model, 'id') else None,
+                model=model, # Will be None if not found, triggering Agno default (OpenAI)
                 tools=tools,
                 knowledge=knowledge,
                 description=data.get('systemPrompt', "You are a helpful AI."),
                 markdown=True
             )
 
-        # RAG Components
+        # 4. RAG Components
         if node_type == 'vectorStore':
-            # This logic mimics RAGManager but inside the graph flow
-            # Requires predecessors: PDF Loader
-            # Note: This is complex in standard logic without the manager instance passed around
-            # For standard nodes, we might rely on the Custom Code Template for VectorStore which is more robust
-            pass 
+            pass # RAG logic typically handled by manager, or return KB object here if connected
 
-        # I/O
+        # 5. I/O
         if node_type == 'chatInput': return None
         if node_type == 'textInput' or node_type == 'promptTemplate':
             return data.get('value') or data.get('template')
@@ -268,7 +239,7 @@ class FlowExecutor:
         # 1. Identify Key Nodes
         agent_node = next((n for n in self.nodes.values() if n.type == 'agentNode'), None)
         
-        # FIX: Also look for Model Nodes if Agent is missing (Simple LLM Flow)
+        # Also look for Model Nodes if Agent is missing (Simple LLM Flow)
         model_node = next((n for n in self.nodes.values() if n.type in ['groqModel', 'openaiModel']), None)
         
         custom_node = next((n for n in self.nodes.values() if n.data.get('isCustom')), None)
@@ -287,20 +258,16 @@ class FlowExecutor:
                     return agent_instance.run(message).content
                 return str(agent_instance)
             
-            # CASE B: Simple Model Flow (No Agent Node) - FIX APPLIED HERE
+            # CASE B: Simple Model Flow (No Agent Node)
             if model_node:
                 model_instance = self.execute_node(model_node.id)
-                # If we got a Model object back, wrap it in a temporary agent
                 if hasattr(model_instance, 'id'): 
                     temp_agent = Agent(model=model_instance, markdown=True)
                     return temp_agent.run(message).content
                 return str(model_instance)
 
-            # CASE C: Custom Component Execution (if main)
+            # CASE C: Custom Component
             if custom_node:
-                # If a custom node exists and we haven't returned yet, try running it
-                # We assume the last custom node is the output
-                # In a real graph, we'd find the node with no out-edges
                 res = self.execute_node(custom_node.id)
                 return str(res)
 
