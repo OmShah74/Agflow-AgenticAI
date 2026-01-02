@@ -69,6 +69,7 @@ import GmailNode from '@/components/nodes/GmailNode';
 import WebSearchNode from '@/components/nodes/WebSearchNode';
 import GroqModelNode from '@/components/nodes/GroqModelNode';
 import PdfLoaderNode from '@/components/nodes/PdfLoaderNode';
+import OpenAIModelNode from '@/components/nodes/OpenAIModelNode'; 
 import VectorStoreNode from '@/components/nodes/VectorStoreNode';
 import ChatInputNode from '@/components/nodes/ChatInputNode';
 import ChatOutputNode from '@/components/nodes/ChatOutputNode';
@@ -336,7 +337,7 @@ function DashboardInner() {
   const nodeTypes = useMemo(() => ({
     agentNode: AgentNode as any,
     groqModel: GroqModelNode as any,
-    openaiModel: GroqModelNode as any,
+    openaiModel: OpenAIModelNode as any,
     gmailNode: GmailNode as any,
     webSearchNode: WebSearchNode as any,
     pdfLoader: PdfLoaderNode as any,
