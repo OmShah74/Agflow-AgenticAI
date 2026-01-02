@@ -1,6 +1,14 @@
 'use client'
 
-import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { 
+    useState, 
+    useCallback, 
+    useEffect, 
+    useMemo, 
+    useRef 
+} from 'react';
+
+// --- React Flow Imports ---
 import { 
     ReactFlow, 
     Background, 
@@ -16,10 +24,22 @@ import {
     ReactFlowProvider,
     useReactFlow,
     useOnSelectionChange,
+    Panel // Used for overlay controls if needed
 } from '@xyflow/react';
+
+// --- Resizable Panels ---
 import * as ResizablePanels from 'react-resizable-panels';
+
+// --- Styles ---
 import '@xyflow/react/dist/style.css';
+
+// --- Utilities ---
 import axios from 'axios';
+import { createClient } from '@/utils/supabase/client';
+import { useRouter } from 'next/navigation';
+import { Toaster, toast } from 'sonner';
+
+// --- Icons ---
 import { 
     LogOut, 
     Play, 
@@ -39,10 +59,10 @@ import {
     FileText, 
     Undo, 
     Redo, 
+    Copy,
+    AlertCircle,
+    CheckCircle
 } from 'lucide-react';
-import { createClient } from '@/utils/supabase/client';
-import { useRouter } from 'next/navigation';
-import { Toaster, toast } from 'sonner';
 
 // --- UI Components ---
 import {
@@ -56,11 +76,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-// --- Custom Components ---
+// --- Custom App Components ---
 import Sidebar from '@/components/Sidebar';
 import KnowledgeBaseModal from '@/components/KnowledgeBaseModal';
-import HeaderWidgets from '@/components/HeaderWidgets'; // NEW: Top right icons
-import LogsModal from '@/components/LogsModal';         // NEW: Floating logs button
+import HeaderWidgets from '@/components/HeaderWidgets';
+import LogsModal from '@/components/LogsModal';
 import BaseNode from '@/components/nodes/BaseNode';
 
 // --- Node Components ---
@@ -68,8 +88,8 @@ import AgentNode from '@/components/nodes/AgentNode';
 import GmailNode from '@/components/nodes/GmailNode';
 import WebSearchNode from '@/components/nodes/WebSearchNode';
 import GroqModelNode from '@/components/nodes/GroqModelNode';
-import PdfLoaderNode from '@/components/nodes/PdfLoaderNode';
 import OpenAIModelNode from '@/components/nodes/OpenAIModelNode'; 
+import PdfLoaderNode from '@/components/nodes/PdfLoaderNode';
 import VectorStoreNode from '@/components/nodes/VectorStoreNode';
 import ChatInputNode from '@/components/nodes/ChatInputNode';
 import ChatOutputNode from '@/components/nodes/ChatOutputNode';
@@ -81,12 +101,34 @@ import ChatMemoryNode from '@/components/nodes/ChatMemoryNode';
 import HTMLRendererNode from '@/components/nodes/HTMLRendererNode';
 import CustomComponentNode from '@/components/nodes/CustomComponentNode';
 
+// --- Placeholder for Future/WIP Nodes ---
 const PlaceholderNode = ({ data }: any) => (
   <BaseNode title={data.label} color="slate">
-    <div className="text-xs text-slate-500 p-2">Config coming soon.</div>
+    <div className="text-xs text-slate-500 p-2">
+        Component configuration coming soon.
+    </div>
   </BaseNode>
 );
 
+// --- TypeScript Interfaces ---
+interface ChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: number;
+    isError?: boolean;
+}
+
+interface SavedFlow {
+    id: string;
+    name: string;
+    data: any;
+    user_id: string;
+    created_at: string;
+}
+
+// ============================================================================
+// MAIN COMPONENT WRAPPER
+// ============================================================================
 export default function AgflowDashboard() {
   return (
     <ReactFlowProvider>
@@ -96,59 +138,68 @@ export default function AgflowDashboard() {
   );
 }
 
+// ============================================================================
+// DASHBOARD LOGIC
+// ============================================================================
 function DashboardInner() {
   const router = useRouter();
   const supabase = createClient();
-  const reactFlowWrapper = useRef<HTMLDivElement>(null);
   
+  // Refs for DOM manipulation
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  
+  // React Flow Hooks
   const { 
       screenToFlowPosition, 
       toObject, 
       deleteElements, 
-      setViewport 
+      setNodes: setReactFlowNodes, 
+      setEdges: setReactFlowEdges,
+      setViewport
   } = useReactFlow();
 
   // ---------------------------------------------------------------------------
-  // STATE MANAGEMENT
+  // STATE DEFINITIONS
   // ---------------------------------------------------------------------------
   
+  // View State (Landing Page vs Builder)
   const [view, setView] = useState<'templates' | 'canvas'>('templates');
   
-  // React Flow Data
+  // Graph Data
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<string[]>([]);
   
-  // History (Deep Cloned for Robust Undo/Redo)
+  // Undo/Redo History Stack
   const [history, setHistory] = useState<{nodes: Node[], edges: Edge[]}[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
 
-  // Clipboard
+  // Clipboard for Copy/Paste
   const [clipboard, setClipboard] = useState<{nodes: Node[], edges: Edge[]} | null>(null);
 
-  // Playground / Execution
+  // Chat & Execution State
   const [chatInput, setChatInput] = useState("");
-  const [chatResponse, setChatResponse] = useState("");
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [showPlayground, setShowPlayground] = useState(true);
 
-  // Persistence
+  // Persistence & Metadata
   const [flowName, setFlowName] = useState("Untitled Flow");
   const [currentFlowId, setCurrentFlowId] = useState<string | null>(null);
-  const [savedFlows, setSavedFlows] = useState<any[]>([]);
+  const [savedFlows, setSavedFlows] = useState<SavedFlow[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
   const [flowSearch, setFlowSearch] = useState("");
 
-  // Dialogs
+  // Guard Rails (Unsaved Changes & Deletion)
   const [isUnsaved, setIsUnsaved] = useState(false);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [flowToDelete, setFlowToDelete] = useState<string | null>(null);
 
   // ---------------------------------------------------------------------------
-  // INITIALIZATION
+  // EFFECT: AUTHENTICATION & INITIAL LOAD
   // ---------------------------------------------------------------------------
-
   useEffect(() => {
     const checkUser = async () => {
         const { data: { user } } = await supabase.auth.getUser();
@@ -163,30 +214,45 @@ function DashboardInner() {
   }, [router, supabase]);
 
   const loadSavedFlows = async (uid: string) => {
-      const { data } = await supabase
+      const { data, error } = await supabase
           .from('flows')
           .select('*')
           .eq('user_id', uid)
           .order('created_at', { ascending: false });
       
-      if (data) setSavedFlows(data);
+      if (error) {
+          console.error("Error loading flows:", error);
+      } else {
+          setSavedFlows(data || []);
+      }
   };
 
-  // Initialize History with empty state
+  // ---------------------------------------------------------------------------
+  // EFFECT: HISTORY INITIALIZATION
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-      if (historyIndex === -1) {
+      if (historyIndex === -1 && nodes.length === 0 && edges.length === 0) {
           setHistory([{ nodes: [], edges: [] }]);
           setHistoryIndex(0);
       }
   }, []);
 
   // ---------------------------------------------------------------------------
-  // HISTORY LOGIC (Undo/Redo)
+  // EFFECT: CHAT AUTO-SCROLL
   // ---------------------------------------------------------------------------
+  useEffect(() => {
+      if (chatScrollRef.current) {
+          chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      }
+  }, [chatHistory, loading]);
 
+  // ---------------------------------------------------------------------------
+  // HELPER: CLEAN NODES (Remove Functions for Cloning)
+  // ---------------------------------------------------------------------------
   const getCleanNodes = useCallback((nodesToClean: Node[]) => {
       return nodesToClean.map(node => {
-          // Destructure to separate the function from the rest of the data
+          // Destructure to separate the function (onChange) from the rest of the data
+          // functions cannot be structuredClone'd
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const { onChange, ...serializableData } = node.data;
           
@@ -197,11 +263,11 @@ function DashboardInner() {
       });
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // HANDLER: SNAPSHOT FOR HISTORY
+  // ---------------------------------------------------------------------------
   const takeSnapshot = useCallback(() => {
-      // 1. Clean nodes first (remove functions)
       const cleanNodes = getCleanNodes(nodes);
-      
-      // 2. Now safe to clone
       const snapshot = { 
           nodes: structuredClone(cleanNodes), 
           edges: structuredClone(edges) 
@@ -209,6 +275,7 @@ function DashboardInner() {
       
       setHistory(prev => {
           const newHistory = prev.slice(0, historyIndex + 1);
+          // Limit history stack size
           if (newHistory.length > 50) newHistory.shift();
           return [...newHistory, snapshot];
       });
@@ -216,155 +283,9 @@ function DashboardInner() {
       setIsUnsaved(true);
   }, [nodes, edges, historyIndex, getCleanNodes]);
 
-  const undo = useCallback(() => {
-      if (historyIndex > 0) {
-          const prevIndex = historyIndex - 1;
-          const prevState = history[prevIndex];
-          setNodes(structuredClone(prevState.nodes));
-          setEdges(structuredClone(prevState.edges));
-          setHistoryIndex(prevIndex);
-          toast.info("Undo");
-      }
-  }, [history, historyIndex]);
-
-  const redo = useCallback(() => {
-      if (historyIndex < history.length - 1) {
-          const nextIndex = historyIndex + 1;
-          const nextState = history[nextIndex];
-          setNodes(structuredClone(nextState.nodes));
-          setEdges(structuredClone(nextState.edges));
-          setHistoryIndex(nextIndex);
-          toast.info("Redo");
-      }
-  }, [history, historyIndex]);
-
   // ---------------------------------------------------------------------------
-  // CLIPBOARD LOGIC (Copy/Paste)
+  // HANDLER: NODE DATA CHANGE
   // ---------------------------------------------------------------------------
-
-  const copySelection = useCallback(() => {
-      const nodesToCopy = nodes.filter(n => n.selected);
-      if (nodesToCopy.length === 0) return;
-
-      const selectedIds = new Set(nodesToCopy.map(n => n.id));
-      const edgesToCopy = edges.filter(e => selectedIds.has(e.source) && selectedIds.has(e.target));
-
-      setClipboard({ 
-          nodes: structuredClone(nodesToCopy), 
-          edges: structuredClone(edgesToCopy) 
-      });
-      toast.info(`Copied ${nodesToCopy.length} component(s)`);
-  }, [nodes, edges]);
-
-  const pasteSelection = useCallback(() => {
-      if (!clipboard) return;
-
-      const newNodes: Node[] = [];
-      const idMap = new Map<string, string>();
-
-      // 1. Create new nodes
-      clipboard.nodes.forEach(node => {
-          const newId = Math.random().toString();
-          idMap.set(node.id, newId);
-          newNodes.push({
-              ...node,
-              id: newId,
-              position: { x: node.position.x + 50, y: node.position.y + 50 },
-              selected: true,
-              data: { ...node.data, onChange: onNodeDataChange } // Re-bind handler
-          });
-      });
-
-      // 2. Create new edges
-      const newEdges: Edge[] = clipboard.edges.map(edge => ({
-          ...edge,
-          id: Math.random().toString(),
-          source: idMap.get(edge.source)!,
-          target: idMap.get(edge.target)!,
-          selected: true
-      }));
-
-      // 3. Update State
-      const currentNodesDeselected = nodes.map(n => ({ ...n, selected: false }));
-      const currentEdgesDeselected = edges.map(e => ({ ...e, selected: false }));
-
-      setNodes([...currentNodesDeselected, ...newNodes]);
-      setEdges([...currentEdgesDeselected, ...newEdges]);
-      
-      // 4. Manually update history
-      setHistory(prev => {
-          const newH = prev.slice(0, historyIndex + 1);
-          newH.push({ 
-              nodes: [...currentNodesDeselected, ...newNodes], 
-              edges: [...currentEdgesDeselected, ...newEdges] 
-          });
-          return newH;
-      });
-      setHistoryIndex(prev => prev + 1);
-      
-      toast.success("Pasted successfully");
-  }, [clipboard, nodes, edges, historyIndex]);
-
-  // ---------------------------------------------------------------------------
-  // KEYBOARD HANDLER
-  // ---------------------------------------------------------------------------
-
-  useEffect(() => {
-      const handleKeyDown = (e: KeyboardEvent) => {
-          if (view !== 'canvas') return;
-
-          const target = e.target as HTMLElement;
-          const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
-          const isContentEditable = target.isContentEditable;
-          const isInsideDialog = target.closest('[role="dialog"]');
-
-          if (isInput || isContentEditable || isInsideDialog) return;
-
-          if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
-          if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); redo(); }
-          if ((e.ctrlKey || e.metaKey) && e.key === 'c') { e.preventDefault(); copySelection(); }
-          if ((e.ctrlKey || e.metaKey) && e.key === 'v') { e.preventDefault(); pasteSelection(); }
-      };
-
-      window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [view, undo, redo, copySelection, pasteSelection]);
-
-  // ---------------------------------------------------------------------------
-  // NODE CONFIGURATION
-  // ---------------------------------------------------------------------------
-
-  const nodeTypes = useMemo(() => ({
-    agentNode: AgentNode as any,
-    groqModel: GroqModelNode as any,
-    openaiModel: OpenAIModelNode as any,
-    gmailNode: GmailNode as any,
-    webSearchNode: WebSearchNode as any,
-    pdfLoader: PdfLoaderNode as any,
-    vectorStore: VectorStoreNode as any,
-    textSplitter: TextSplitterNode as any,
-    chatInput: ChatInputNode as any,
-    chatOutput: ChatOutputNode as any,
-    textInput: TextInputNode as any,
-    promptTemplate: PromptTemplateNode as any,
-    promptBuilder: PromptBuilderNode as any,
-    chatMemory: ChatMemoryNode as any,
-    htmlRenderer: HTMLRendererNode as any,
-    customComponent: CustomComponentNode as any,
-    ollamaModel: PlaceholderNode,
-    fileLoader: PdfLoaderNode as any,
-    textOutput: TextInputNode as any,
-    calculator: PlaceholderNode,
-    scraper: PlaceholderNode,
-    embeddings: GroqModelNode as any,
-    router: PlaceholderNode,
-    crewAgent: PlaceholderNode,
-  }), []);
-
-  // ---------------------------------------------------------------------------
-  // HANDLERS (React Flow)
-  // ---------------------------------------------------------------------------
-
   const onNodeDataChange = useCallback((id: string, newData: any) => {
     setNodes((nds) => nds.map((node) => {
       if (node.id === id) {
@@ -375,6 +296,212 @@ function DashboardInner() {
     }));
   }, []);
 
+  // ---------------------------------------------------------------------------
+  // ACTION: UNDO
+  // ---------------------------------------------------------------------------
+  const undo = useCallback(() => {
+      if (historyIndex > 0) {
+          const prevIndex = historyIndex - 1;
+          const prevState = history[prevIndex];
+          
+          // Re-hydrate nodes with the onChange handler
+          const hydratedNodes = prevState.nodes.map((n: any) => ({
+             ...n, 
+             data: { ...n.data, onChange: onNodeDataChange }
+          }));
+          
+          setNodes(hydratedNodes);
+          setEdges(structuredClone(prevState.edges));
+          setHistoryIndex(prevIndex);
+          toast.info("Undo");
+      }
+  }, [history, historyIndex, onNodeDataChange]);
+
+  // ---------------------------------------------------------------------------
+  // ACTION: REDO
+  // ---------------------------------------------------------------------------
+  const redo = useCallback(() => {
+      if (historyIndex < history.length - 1) {
+          const nextIndex = historyIndex + 1;
+          const nextState = history[nextIndex];
+          
+          const hydratedNodes = nextState.nodes.map((n: any) => ({
+             ...n, 
+             data: { ...n.data, onChange: onNodeDataChange }
+          }));
+          
+          setNodes(hydratedNodes);
+          setEdges(structuredClone(nextState.edges));
+          setHistoryIndex(nextIndex);
+          toast.info("Redo");
+      }
+  }, [history, historyIndex, onNodeDataChange]);
+
+  // ---------------------------------------------------------------------------
+  // ACTION: COPY
+  // ---------------------------------------------------------------------------
+  const copySelection = useCallback(() => {
+      const nodesToCopy = nodes.filter(n => n.selected);
+      if (nodesToCopy.length === 0) return;
+
+      const selectedIds = new Set(nodesToCopy.map(n => n.id));
+      // Only copy edges that connect two selected nodes
+      const edgesToCopy = edges.filter(e => selectedIds.has(e.source) && selectedIds.has(e.target));
+      
+      const cleanNodes = getCleanNodes(nodesToCopy);
+
+      setClipboard({ 
+          nodes: structuredClone(cleanNodes), 
+          edges: structuredClone(edgesToCopy) 
+      });
+      toast.info(`Copied ${nodesToCopy.length} component(s)`);
+  }, [nodes, edges, getCleanNodes]);
+
+  // ---------------------------------------------------------------------------
+  // ACTION: PASTE
+  // ---------------------------------------------------------------------------
+  const pasteSelection = useCallback(() => {
+      if (!clipboard) return;
+
+      const newNodes: Node[] = [];
+      const idMap = new Map<string, string>();
+
+      // 1. Recreate nodes with new IDs and slight offset
+      clipboard.nodes.forEach(node => {
+          const newId = Math.random().toString();
+          idMap.set(node.id, newId);
+          newNodes.push({
+              ...node,
+              id: newId,
+              position: { x: node.position.x + 50, y: node.position.y + 50 },
+              selected: true,
+              data: { ...node.data, onChange: onNodeDataChange }
+          });
+      });
+
+      // 2. Recreate edges with new IDs
+      const newEdges: Edge[] = clipboard.edges.map(edge => ({
+          ...edge,
+          id: Math.random().toString(),
+          source: idMap.get(edge.source)!,
+          target: idMap.get(edge.target)!,
+          selected: true
+      }));
+
+      // 3. Deselect current selection
+      const currentNodesDeselected = nodes.map(n => ({ ...n, selected: false }));
+      const currentEdgesDeselected = edges.map(e => ({ ...e, selected: false }));
+
+      const finalNodes = [...currentNodesDeselected, ...newNodes];
+      const finalEdges = [...currentEdgesDeselected, ...newEdges];
+
+      setNodes(finalNodes);
+      setEdges(finalEdges);
+      
+      // 4. Update History Manually
+      const cleanFinalNodes = getCleanNodes(finalNodes);
+      setHistory(prev => {
+          const newH = prev.slice(0, historyIndex + 1);
+          newH.push({ 
+              nodes: structuredClone(cleanFinalNodes), 
+              edges: structuredClone(finalEdges) 
+          });
+          return newH;
+      });
+      setHistoryIndex(prev => prev + 1);
+      
+      toast.success("Pasted successfully");
+  }, [clipboard, nodes, edges, historyIndex, onNodeDataChange, getCleanNodes]);
+
+  // ---------------------------------------------------------------------------
+  // EFFECT: KEYBOARD SHORTCUTS
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (view !== 'canvas') return;
+
+          // Prevent shortcuts if typing in an input
+          const target = e.target as HTMLElement;
+          const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+          const isContentEditable = target.isContentEditable;
+          const isInsideDialog = target.closest('[role="dialog"]');
+
+          if (isInput || isContentEditable || isInsideDialog) return;
+
+          // Undo: Ctrl+Z
+          if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { 
+              e.preventDefault(); 
+              undo(); 
+          }
+          // Redo: Ctrl+Y or Ctrl+Shift+Z
+          if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { 
+              e.preventDefault(); 
+              redo(); 
+          }
+          // Copy: Ctrl+C
+          if ((e.ctrlKey || e.metaKey) && e.key === 'c') { 
+              e.preventDefault(); 
+              copySelection(); 
+          }
+          // Paste: Ctrl+V
+          if ((e.ctrlKey || e.metaKey) && e.key === 'v') { 
+              e.preventDefault(); 
+              pasteSelection(); 
+          }
+      };
+
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [view, undo, redo, copySelection, pasteSelection]);
+
+  // ---------------------------------------------------------------------------
+  // MEMO: NODE TYPES REGISTRATION
+  // ---------------------------------------------------------------------------
+  const nodeTypes = useMemo(() => ({
+    // Core
+    agentNode: AgentNode as any,
+    groqModel: GroqModelNode as any,
+    openaiModel: OpenAIModelNode as any,
+    
+    // Tools
+    gmailNode: GmailNode as any,
+    webSearchNode: WebSearchNode as any,
+    calculator: PlaceholderNode,
+    scraper: PlaceholderNode,
+
+    // RAG
+    pdfLoader: PdfLoaderNode as any,
+    vectorStore: VectorStoreNode as any,
+    textSplitter: TextSplitterNode as any,
+    embeddings: GroqModelNode as any, // Reuse basic input UI
+
+    // I/O
+    chatInput: ChatInputNode as any,
+    chatOutput: ChatOutputNode as any,
+    textInput: TextInputNode as any,
+    textOutput: TextInputNode as any,
+
+    // Logic
+    promptTemplate: PromptTemplateNode as any,
+    promptBuilder: PromptBuilderNode as any,
+    router: PlaceholderNode,
+
+    // Helpers
+    chatMemory: ChatMemoryNode as any,
+    htmlRenderer: HTMLRendererNode as any,
+    customComponent: CustomComponentNode as any,
+    
+    // Misc
+    ollamaModel: PlaceholderNode,
+    fileLoader: PdfLoaderNode as any,
+    crewAgent: PlaceholderNode,
+  }), []);
+
+  // ---------------------------------------------------------------------------
+  // REACT FLOW: CHANGE HANDLERS
+  // ---------------------------------------------------------------------------
+
+  // Ensure nodes always have the data change handler attached
   useEffect(() => {
     setNodes((nds) => nds.map(node => ({
         ...node,
@@ -393,22 +520,25 @@ function DashboardInner() {
   }, []);
 
   const onConnect = useCallback((params: Connection) => {
-      setEdges((eds) => addEdge({ 
-          ...params, 
-          animated: true, 
-          style: { stroke: '#a855f7', strokeWidth: 2 } 
-      }, eds));
+      setEdges((eds) => {
+          const newEdges = addEdge({ 
+              ...params, 
+              animated: true, 
+              style: { stroke: '#a855f7', strokeWidth: 2 } 
+          }, eds);
+          
+          // Delayed snapshot to ensure state is settled
+          setTimeout(() => {
+              setHistory(prev => { 
+                 return prev; // Force update if needed
+              });
+              // Ideally call snapshot here if possible, but async state makes it tricky
+              // We rely on user interactions for snapshots usually
+          }, 50);
+          
+          return newEdges;
+      });
       setIsUnsaved(true);
-      
-      // Delay snapshot slightly to ensure state is settled
-      setTimeout(() => {
-          setHistory(prev => {
-             // In a real implementation we would grab current state from refs, 
-             // here we rely on the user dragging next to trigger snapshot or manual save
-             // A simple workaround for connectivity snapshot is complex due to async state
-             return prev; 
-          });
-      }, 50);
   }, []);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -420,35 +550,59 @@ function DashboardInner() {
     (event: React.DragEvent) => {
       event.preventDefault();
 
-      // Case 1: Import JSON
+      // Case 1: Import JSON File
       if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
           const file = event.dataTransfer.files[0];
-          if (file.type !== "application/json" && !file.name.endsWith(".json")) return;
+          if (file.type !== "application/json" && !file.name.endsWith(".json")) {
+              toast.error("Invalid file. Please drop a .json file.");
+              return;
+          }
+
           const reader = new FileReader();
           reader.onload = (e) => {
               try {
                   const flowData = JSON.parse(e.target?.result as string);
-                  const hydratedNodes = flowData.nodes.map((n: any) => ({ ...n, data: { ...n.data, onChange: onNodeDataChange } }));
+                  if (!flowData.nodes || !flowData.edges) throw new Error("Invalid structure");
+
+                  const hydratedNodes = flowData.nodes.map((n: any) => ({
+                      ...n,
+                      data: { ...n.data, onChange: onNodeDataChange }
+                  }));
+
                   setNodes(hydratedNodes);
                   setEdges(flowData.edges);
+                  
                   if (flowData.viewport) setViewport(flowData.viewport);
+
                   setFlowName(file.name.replace('.json', ''));
                   setCurrentFlowId(null);
-                  setHistory([{ nodes: hydratedNodes, edges: flowData.edges }]);
+                  
+                  // Reset history
+                  const clean = getCleanNodes(hydratedNodes);
+                  setHistory([{ nodes: clean, edges: flowData.edges }]);
                   setHistoryIndex(0);
+                  setChatHistory([]); 
+                  setIsUnsaved(true);
                   toast.success(`Imported "${file.name}"`);
-              } catch (err) { toast.error("Import failed"); }
+              } catch (err) {
+                  toast.error("Failed to parse flow file.");
+              }
           };
           reader.readAsText(file);
           return;
       }
 
-      // Case 2: Drop Component
+      // Case 2: Drop Component from Sidebar
       const type = event.dataTransfer.getData('application/reactflow');
       const label = event.dataTransfer.getData('application/label');
+
       if (!type) return;
 
-      const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const position = screenToFlowPosition({ 
+          x: event.clientX, 
+          y: event.clientY 
+      });
+      
       const newNode: Node = {
         id: Math.random().toString(),
         type,
@@ -458,8 +612,9 @@ function DashboardInner() {
       
       setNodes((nds) => nds.concat(newNode));
       setIsUnsaved(true);
+      takeSnapshot();
     },
-    [screenToFlowPosition, onNodeDataChange, setViewport]
+    [screenToFlowPosition, onNodeDataChange, setViewport, takeSnapshot, getCleanNodes]
   );
 
   const onNodeDragStop = useCallback(() => {
@@ -473,9 +628,25 @@ function DashboardInner() {
   });
 
   // ---------------------------------------------------------------------------
-  // ACTIONS
+  // ACTION: DELETE SELECTION
   // ---------------------------------------------------------------------------
+  const handleDeleteSelectedNodes = useCallback(() => {
+      if (selectedNodes.length === 0) return;
+      
+      deleteElements({ nodes: selectedNodes.map(id => ({ id })) });
+      setIsUnsaved(true);
+      toast.info(`Deleted ${selectedNodes.length} node(s)`);
+      
+      const hasAgent = nodes.find(n => selectedNodes.includes(n.id) && n.type === 'agentNode');
+      if (hasAgent) setChatHistory([]); // Clear chat if agent removed
+      
+      setSelectedNodes([]);
+      setTimeout(takeSnapshot, 50);
+  }, [selectedNodes, deleteElements, nodes, takeSnapshot]);
 
+  // ---------------------------------------------------------------------------
+  // ACTION: SAVE FLOW
+  // ---------------------------------------------------------------------------
   const handleSaveFlow = async (silent = false) => {
     if (!userId) return false;
     if (!silent) toast.loading("Saving flow...");
@@ -514,49 +685,60 @@ function DashboardInner() {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // ACTION: LOAD FLOW
+  // ---------------------------------------------------------------------------
   const handleLoadFlow = (flow: any) => {
       handleProtectedAction(() => {
           setFlowName(flow.name);
           setCurrentFlowId(flow.id);
-          const { nodes: savedNodes, edges: savedEdges, viewport } = flow.data;
-          setNodes(savedNodes.map((n: any) => ({ ...n, data: { ...n.data, onChange: onNodeDataChange } })));
-          setEdges(savedEdges || []);
-          if (viewport) setViewport(viewport);
           
-          setHistory([{ nodes: savedNodes, edges: savedEdges || [] }]);
+          const { nodes: savedNodes, edges: savedEdges, viewport } = flow.data;
+          
+          setNodes(savedNodes.map((n: any) => ({
+              ...n,
+              data: { ...n.data, onChange: onNodeDataChange }
+          })));
+          setEdges(savedEdges || []);
+          
+          if (viewport) setViewport(viewport);
+
+          const clean = getCleanNodes(savedNodes);
+          setHistory([{ nodes: clean, edges: savedEdges || [] }]);
           setHistoryIndex(0);
+          setChatHistory([]); // Reset chat history on load
+
           setIsUnsaved(false);
           setView('canvas');
           toast.success(`Loaded "${flow.name}"`);
       });
   };
 
-  const handleDeleteSelectedNodes = useCallback(() => {
-      if (selectedNodes.length === 0) return;
-      deleteElements({ nodes: selectedNodes.map(id => ({ id })) });
-      setIsUnsaved(true);
-      toast.info(`Deleted ${selectedNodes.length} node(s)`);
-      if (nodes.some(n => selectedNodes.includes(n.id) && n.type === 'agentNode')) setChatResponse("");
-      setSelectedNodes([]);
-      setTimeout(takeSnapshot, 50);
-  }, [selectedNodes, deleteElements, nodes, takeSnapshot]);
-
+  // ---------------------------------------------------------------------------
+  // ACTION: DELETE SAVED FLOW (DB)
+  // ---------------------------------------------------------------------------
   const confirmDeleteFlow = async () => {
       if (!flowToDelete) return;
       const id = flowToDelete;
       const previousFlows = [...savedFlows];
+      
+      // Optimistic update
       setSavedFlows(prev => prev.filter(flow => flow.id !== id));
       setFlowToDelete(null);
 
       try {
           const { error } = await supabase.from('flows').delete().eq('id', id);
           if (error) throw error;
+          
           toast.success("Flow deleted successfully");
+
+          // Reset if we deleted the current active flow
           if (currentFlowId === id) {
               setFlowName("Untitled Flow");
               setCurrentFlowId(null);
               setNodes([]);
               setEdges([]);
+              setChatHistory([]);
               setView('templates');
           }
       } catch (error) {
@@ -566,6 +748,9 @@ function DashboardInner() {
       }
   };
 
+  // ---------------------------------------------------------------------------
+  // ACTION: EXPORT JSON
+  // ---------------------------------------------------------------------------
   const handleDownloadJson = () => {
       const flowObject = toObject();
       const jsonString = `data:text/json;chatset=utf-8,${encodeURIComponent(JSON.stringify(flowObject, null, 2))}`;
@@ -576,6 +761,9 @@ function DashboardInner() {
       toast.success("Flow exported to JSON");
   };
 
+  // ---------------------------------------------------------------------------
+  // NAVIGATION GUARDS
+  // ---------------------------------------------------------------------------
   const handleProtectedAction = (action: () => void) => {
       if (isUnsaved) {
           setPendingAction(() => action);
@@ -602,13 +790,17 @@ function DashboardInner() {
   };
 
   // ---------------------------------------------------------------------------
-  // EXECUTION
+  // EXECUTION LOGIC (Backend API)
   // ---------------------------------------------------------------------------
-
   const runFlow = async () => {
+    if (!chatInput.trim()) return;
+
+    const userMessage = chatInput;
+    setChatInput(""); // Clear immediately
+    setChatHistory(prev => [...prev, { role: 'user', content: userMessage, timestamp: Date.now() }]);
     setLoading(true);
-    setChatResponse("");
     
+    // Validate Graph Structure
     const agentNode = nodes.find(n => n.type === 'agentNode');
     const modelNode = nodes.find(n => n.type === 'groqModel' || n.type === 'openaiModel');
     const customNode = nodes.find(n => n.type === 'customComponent');
@@ -618,11 +810,13 @@ function DashboardInner() {
         setLoading(false); return; 
     }
 
+    // Extract API Key
     let apiKey = "";
     if (modelNode) apiKey = (modelNode.data as any).apiKey;
     else if (agentNode) apiKey = (agentNode.data as any).groqApiKey || (agentNode.data as any).apiKey;
     
-    if (!apiKey && (agentNode || modelNode)) { 
+    // Only warn if not using pure custom component
+    if (!apiKey && !customNode) { 
         toast.error("Missing API Key in Agent/Model node."); 
         setLoading(false); return; 
     }
@@ -637,25 +831,57 @@ function DashboardInner() {
     const payload = {
         nodes, 
         edges, 
-        message: chatInput, 
+        message: userMessage, 
         groq_api_key: apiKey, 
         openai_api_key: openaiKey,
-        user_id: userId,        // Passed for Logging
-        flow_id: currentFlowId  // Passed for Logging
+        user_id: userId,
+        flow_id: currentFlowId
     };
 
     try {
         const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/run_flow`, payload);
-        setChatResponse(res.data.response);
-        toast.success("Execution successful");
+        const responseContent = res.data.response;
+
+        // Parse Error Responses (JSON vs String)
+        let isError = false;
+        let finalContent = responseContent;
+        
+        if (typeof responseContent === 'string' && (responseContent.startsWith('Execution Error:') || responseContent.includes('"error":'))) {
+            try {
+                const jsonPart = responseContent.replace("Execution Error:", "").trim();
+                const parsed = JSON.parse(jsonPart);
+                if (parsed.error) {
+                    isError = true;
+                    finalContent = `API Error: ${parsed.error.message || parsed.error.code}`;
+                }
+            } catch (e) {
+                if (responseContent.toLowerCase().includes("error")) isError = true;
+            }
+        }
+
+        setChatHistory(prev => [...prev, { 
+            role: 'assistant', 
+            content: finalContent, 
+            timestamp: Date.now(),
+            isError: isError
+        }]);
+
     } catch (error) {
         console.error(error);
-        setChatResponse("Error: Backend execution failed.");
+        setChatHistory(prev => [...prev, { 
+            role: 'assistant', 
+            content: "Error: Backend execution failed. Check logs.", 
+            timestamp: Date.now(), 
+            isError: true 
+        }]);
         toast.error("Execution failed. Check backend logs.");
     }
     setLoading(false);
   };
 
+  // ---------------------------------------------------------------------------
+  // TEMPLATE LOADING
+  // ---------------------------------------------------------------------------
   const loadTemplate = (type: string) => {
      handleProtectedAction(() => {
          setFlowName(`${type.charAt(0).toUpperCase() + type.slice(1)} Template`);
@@ -665,10 +891,13 @@ function DashboardInner() {
          const resetState = (nds: Node[], eds: Edge[]) => {
              setNodes(nds);
              setEdges(eds);
-             setHistory([{ nodes: nds, edges: eds }]);
+             const clean = getCleanNodes(nds);
+             setHistory([{ nodes: clean, edges: eds }]);
              setHistoryIndex(0);
+             setChatHistory([]);
          };
 
+         // --- TEMPLATES DEFINITION ---
          if (type === 'blank') { 
              resetState([], []);
          } 
@@ -715,15 +944,13 @@ function DashboardInner() {
 
   const filteredFlows = savedFlows.filter(f => f.name.toLowerCase().includes(flowSearch.toLowerCase()));
 
-  // ---------------------------------------------------------------------------
-  // VIEW RENDER
-  // ---------------------------------------------------------------------------
-
+  // ============================================================================
+  // RENDER: TEMPLATES VIEW
+  // ============================================================================
   if (view === 'templates') {
       return (
         <div className="h-screen w-full bg-slate-950 flex overflow-hidden">
-             
-             {/* Left: Saved Flows */}
+             {/* Left Panel: Saved Flows */}
              <div className="w-80 bg-slate-900 border-r border-slate-800 flex flex-col z-20 shadow-xl">
                 <div className="p-5 border-b border-slate-800 bg-slate-900/50">
                     <h2 className="font-bold text-white flex items-center gap-2 mb-4">
@@ -791,7 +1018,7 @@ function DashboardInner() {
                 </div>
              </div>
 
-             {/* Right: Templates */}
+             {/* Right Panel: Templates */}
              <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden bg-slate-950">
                  <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10"></div>
                  <div className="z-10 text-center max-w-5xl px-6 w-full">
@@ -891,10 +1118,9 @@ function DashboardInner() {
       )
   }
 
-  // ---------------------------------------------------------------------------
-  // VIEW: CANVAS / BUILDER
-  // ---------------------------------------------------------------------------
-
+  // ============================================================================
+  // RENDER: CANVAS VIEW
+  // ============================================================================
   return (
     <div className="h-screen w-full flex flex-col bg-slate-950 overflow-hidden relative">
         {/* Floating Logs Button */}
@@ -923,6 +1149,7 @@ function DashboardInner() {
             <div className="flex items-center gap-2">
                 <HeaderWidgets />
 
+                {/* Undo/Redo Buttons */}
                 <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1 mr-2">
                     <button 
                         onClick={undo} 
@@ -942,6 +1169,7 @@ function DashboardInner() {
                     </button>
                 </div>
 
+                {/* Conditional Delete Button */}
                 {selectedNodes.length > 0 && (
                     <button 
                         onClick={handleDeleteSelectedNodes}
@@ -975,18 +1203,18 @@ function DashboardInner() {
             </div>
         </header>
 
-        {/* Resizable Layout */}
+        {/* Resizable Panels */}
         <div className="flex-1 overflow-hidden">
             <ResizablePanels.PanelGroup direction="horizontal">
                 
-                {/* Sidebar */}
+                {/* 1. Sidebar */}
                 <ResizablePanels.Panel defaultSize={20} minSize={15} maxSize={30} className="bg-slate-950 border-r border-slate-800">
                     <Sidebar />
                 </ResizablePanels.Panel>
                 
                 <ResizablePanels.PanelResizeHandle className="w-1 bg-slate-900 hover:bg-purple-600 transition-colors cursor-col-resize" />
 
-                {/* Canvas */}
+                {/* 2. Canvas */}
                 <ResizablePanels.Panel minSize={30}>
                     <div className="w-full h-full relative bg-slate-900" ref={reactFlowWrapper}>
                         <ReactFlow
@@ -1006,7 +1234,7 @@ function DashboardInner() {
                     </div>
                 </ResizablePanels.Panel>
 
-                {/* Playground */}
+                {/* 3. Playground */}
                 {showPlayground && (
                     <>
                         <ResizablePanels.PanelResizeHandle className="w-1 bg-slate-900 hover:bg-purple-600 transition-colors cursor-col-resize" />
@@ -1018,18 +1246,9 @@ function DashboardInner() {
                                     </h2>
                                 </div>
                                 
-                                <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-slate-950/50">
-                                    {loading && (
-                                        <div className="flex gap-3 animate-pulse">
-                                            <div className="w-8 h-8 rounded-full bg-slate-800 shrink-0 border border-slate-700" />
-                                            <div className="space-y-2 w-full">
-                                                <div className="bg-slate-800 h-4 w-3/4 rounded" />
-                                                <div className="bg-slate-800 h-4 w-1/2 rounded" />
-                                            </div>
-                                        </div>
-                                    )}
-                                    
-                                    {!loading && !chatResponse && (
+                                {/* Chat History Area */}
+                                <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-slate-950/50" ref={chatScrollRef}>
+                                    {chatHistory.length === 0 && (
                                         <div className="flex flex-col items-center justify-center h-full text-slate-600 space-y-3 opacity-50">
                                             <Sparkles className="w-8 h-8" />
                                             <p className="text-xs text-center px-10">
@@ -1038,18 +1257,40 @@ function DashboardInner() {
                                         </div>
                                     )}
 
-                                    {chatResponse && (
-                                        <div className="flex gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center shrink-0 shadow-lg shadow-purple-900/30">
-                                                <Bot className="w-4 h-4 text-white" />
+                                    {chatHistory.map((msg, idx) => (
+                                        <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                            <div className={`max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
+                                                msg.role === 'user' 
+                                                ? 'bg-purple-600 text-white rounded-br-none' 
+                                                : msg.isError 
+                                                    ? 'bg-red-900/20 border border-red-900 text-red-200 rounded-bl-none'
+                                                    : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
+                                            }`}>
+                                                {msg.role === 'assistant' && (
+                                                    <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] uppercase font-bold tracking-wider">
+                                                        {msg.isError ? <AlertCircle size={10} className="text-red-400" /> : <Bot size={10} />} 
+                                                        {msg.isError ? "Error" : "Agent"}
+                                                    </div>
+                                                )}
+                                                <div className="whitespace-pre-wrap">{msg.content}</div>
                                             </div>
-                                            <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl rounded-tl-none text-sm text-slate-300 leading-relaxed whitespace-pre-wrap shadow-sm">
-                                                {chatResponse}
+                                        </div>
+                                    ))}
+
+                                    {loading && (
+                                        <div className="flex justify-start">
+                                            <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-bl-none px-4 py-3">
+                                                <div className="flex gap-1.5">
+                                                    <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce" />
+                                                    <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                                                    <div className="w-2 h-2 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                                                </div>
                                             </div>
                                         </div>
                                     )}
                                 </div>
                                 
+                                {/* Input Area */}
                                 <div className="p-4 bg-slate-900 border-t border-slate-800">
                                     <div className="relative">
                                         <textarea 

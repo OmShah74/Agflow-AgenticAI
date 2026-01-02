@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 
 export default function LogsModal() {
   const [isOpen, setIsOpen] = useState(false);
-  const [logs, setLogs] = useState<any[]>([]); // Default to empty array
+  const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
 
@@ -24,17 +24,14 @@ export default function LogsModal() {
           if (!user) return;
 
           const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/logs/${user.id}`);
-          
-          // FIX: Ensure data is actually an array before setting state
           if (Array.isArray(res.data)) {
               setLogs(res.data);
           } else {
-              console.warn("API returned non-array logs:", res.data);
-              setLogs([]); // Fallback to empty array
+              setLogs([]);
           }
       } catch (e) {
           console.error("Failed to fetch logs:", e);
-          setLogs([]); // Fallback on error
+          setLogs([]);
       }
       setLoading(false);
   };
@@ -46,7 +43,8 @@ export default function LogsModal() {
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetTrigger asChild>
-        <button className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-purple-500 p-3 rounded-full shadow-xl transition-all duration-300 flex items-center gap-2 group">
+        {/* FIX: Moved to left-6 to avoid overlap with Chat Send button */}
+        <button className="fixed bottom-6 left-6 z-50 bg-slate-900 border border-slate-700 text-slate-300 hover:text-white hover:border-purple-500 p-3 rounded-full shadow-xl transition-all duration-300 flex items-center gap-2 group">
             <ScrollText size={20} />
             <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 text-sm font-medium whitespace-nowrap">
                 View Logs
@@ -55,14 +53,11 @@ export default function LogsModal() {
       </SheetTrigger>
       
       <SheetContent side="bottom" className="h-[60vh] bg-slate-950 border-t border-slate-800 p-0 text-slate-200">
-        
-        {/* Hidden Title for Accessibility */}
         <SheetHeader className="sr-only">
             <SheetTitle>Execution Logs</SheetTitle>
         </SheetHeader>
 
         <div className="flex flex-col h-full">
-            {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900">
                 <div className="flex items-center gap-2">
                     <div className="p-2 bg-purple-500/10 rounded-md border border-purple-500/20">
@@ -78,7 +73,6 @@ export default function LogsModal() {
                 </Button>
             </div>
 
-            {/* Table Area */}
             <div className="flex-1 overflow-auto bg-[#0a0a0a]">
                 <Table>
                     <TableHeader className="bg-slate-900/80 sticky top-0 backdrop-blur-sm z-10">
@@ -103,13 +97,10 @@ export default function LogsModal() {
                             logs.map((log) => (
                                 <TableRow key={log.id} className="border-slate-800/50 hover:bg-slate-900/30 group text-xs font-mono transition-colors">
                                     <TableCell className="text-slate-500 whitespace-nowrap">
-                                        {new Date(log.timestamp).toLocaleTimeString()} <span className="text-[10px] text-slate-600">{new Date(log.timestamp).toLocaleDateString()}</span>
+                                        {new Date(log.timestamp).toLocaleTimeString()}
                                     </TableCell>
                                     <TableCell>
-                                        <div className="flex flex-col gap-0.5">
-                                            <span className="text-purple-300 font-semibold">{log.node_type}</span>
-                                            <span className="text-[9px] text-slate-600 font-sans truncate max-w-[120px]" title={log.node_id}>{log.node_id}</span>
-                                        </div>
+                                        <span className="text-purple-300 font-semibold">{log.node_type}</span>
                                     </TableCell>
                                     <TableCell>
                                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${

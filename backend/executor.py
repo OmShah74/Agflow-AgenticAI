@@ -3,12 +3,9 @@ import networkx as nx
 from typing import Dict, Any, List
 import traceback
 import json
+import re  # Added for Regex redaction
 from datetime import datetime
-from supabase import create_client, Client
-from dotenv import load_dotenv # NEW IMPORT
-
-# 1. Load Environment Variables explicitly
-load_dotenv()
+from supabase import create_client, Client 
 
 # --- Agno Framework Imports ---
 from agno.agent import Agent
@@ -17,6 +14,7 @@ from agno.models.openai import OpenAIChat
 from agno.tools.duckduckgo import DuckDuckGoTools
 from agno.tools.yfinance import YFinanceTools
 
+# --- Local Imports ---
 try:
     from tools import SimpleGmailTools 
 except ImportError:
@@ -28,12 +26,6 @@ from rag_manager import RAGManager
 DB_URL = os.getenv("DB_URL")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-
-# DEBUG PRINT: Check if keys are loaded
-print("--- BACKEND CONFIG CHECK ---")
-print(f"SUPABASE_URL Found: {bool(SUPABASE_URL)}")
-print(f"SUPABASE_KEY Found: {bool(SUPABASE_KEY)}")
-print("----------------------------")
 
 class FlowExecutor:
     def __init__(self, flow_data, user_keys: Dict[str, str]):
@@ -58,21 +50,56 @@ class FlowExecutor:
                 print(f"Supabase Init Error: {e}")
 
     # ------------------------------------------------------------------
-    # LOGGING
+    # SANITIZATION & LOGGING
     # ------------------------------------------------------------------
-    def log_execution(self, node_id, node_type, inputs, output, status="success"):
-        """Writes execution details to Supabase with DEBUGGING."""
+    def _sanitize_data(self, data: Any) -> Any:
+        """
+        Recursively removes sensitive keys from dicts and 
+        uses Regex to scrub api_key='...' patterns from strings.
+        """
+        # 1. Handle Dictionaries
+        if isinstance(data, dict):
+            clean_dict = {}
+            for k, v in data.items():
+                if any(secret in k.lower() for secret in ['api_key', 'password', 'secret', 'token']):
+                    clean_dict[k] = "********"
+                else:
+                    clean_dict[k] = self._sanitize_data(v)
+            return clean_dict
         
-        # --- DEBUG CHECKS ---
-        if not self.supabase:
-            print("❌ LOGGING FAILED: Backend SUPABASE_URL or SUPABASE_KEY is missing in .env")
-            return
+        # 2. Handle Lists
+        if isinstance(data, list):
+            return [self._sanitize_data(item) for item in data]
         
-        if not self.user_id: 
-            print("❌ LOGGING FAILED: No 'user_id' received from Frontend. Check if user is logged in.")
-            return
+        # 3. Handle Strings (The most important part for Object reprs)
+        if isinstance(data, str):
+            # Regex to catch api_key='xyz' or api_key="xyz" or api_key: "xyz"
+            # Captures the key name and replaces the value
+            pattern = r"(api_key|password|secret|token)\s*(=|:)\s*(['\"])(.*?)(\3)"
+            return re.sub(pattern, r"\1\2\3********\5", data, flags=re.IGNORECASE)
 
-        print(f"📝 Attempting to log execution for User: {self.user_id}...")
+        return data
+
+    def log_execution(self, node_id, node_type, inputs, output, status="success"):
+        """Writes sanitized execution details to Supabase."""
+        if not self.supabase or not self.user_id: return
+
+        # 1. Detect Error in Output String (JSON errors or Exception strings)
+        final_status = status
+        str_output = str(output)
+        
+        if "error" in str_output.lower():
+            # Check for common error signatures
+            if '"type":' in str_output and '"code":' in str_output: # JSON Error
+                final_status = "error"
+            elif str_output.startswith("Error:") or "traceback" in str_output.lower():
+                final_status = "error"
+            elif "invalid_api_key" in str_output.lower():
+                final_status = "error"
+
+        # 2. Sanitize Inputs and Outputs
+        safe_inputs = self._sanitize_data(inputs)
+        safe_output = self._sanitize_data(str_output)
 
         try:
             log_entry = {
@@ -80,19 +107,14 @@ class FlowExecutor:
                 "flow_id": self.flow_id,
                 "node_id": node_id,
                 "node_type": node_type,
-                "inputs": inputs, 
-                "outputs": str(output)[:2000], 
-                "status": status,
+                "inputs": safe_inputs, 
+                "outputs": safe_output[:5000], # Allow larger logs
+                "status": final_status,
                 "timestamp": datetime.now().isoformat()
             }
-            
-            # Execute Insert
             self.supabase.table("run_logs").insert(log_entry).execute()
-            print(f"✅ LOG SUCCESS: Saved log for {node_type}")
-            
         except Exception as e:
-            print(f"❌ LOGGING ERROR: {str(e)}")
-            # Common error: Table doesn't exist or RLS issue
+            print(f"Logging failed: {e}")
 
     # ------------------------------------------------------------------
     # GRAPH & RESOURCES
@@ -117,6 +139,24 @@ class FlowExecutor:
     # ------------------------------------------------------------------
     # INPUT RESOLUTION
     # ------------------------------------------------------------------
+    def resolve_node_input(self, node_id, arg_name=None):
+        """Finds executed result of a predecessor node."""
+        predecessors = list(self.graph.in_edges(node_id, data=True))
+        
+        if arg_name:
+            for u, v, data in predecessors:
+                if data.get('target_handle') == arg_name:
+                    return self.execute_node(u)
+        
+        results = []
+        for u, v, data in predecessors:
+            res = self.execute_node(u)
+            if res is not None:
+                results.append(res)
+        
+        if not results: return None
+        return results[0] if len(results) == 1 else results
+
     def resolve_all_inputs(self, node_id):
         """Map all incoming edges to their target handle names."""
         inputs = {}
@@ -141,7 +181,7 @@ class FlowExecutor:
         try:
             inputs_log = self.resolve_all_inputs(node_id)
             
-            # ROUTING: Custom Code vs Standard Logic
+            # ROUTING
             if node.data.get('isCustom') and node.data.get('code'):
                 result = self.run_custom_code(node)
             else:
@@ -149,9 +189,8 @@ class FlowExecutor:
             
         except Exception as e:
             status = "error"
-            result = str(e)
-            traceback.print_exc()
-            raise e # Raise to top level to show in UI
+            result = f"Error: {str(e)}"
+            # traceback.print_exc() # Optional: Print to console for debugging
         
         finally:
             self.log_execution(node_id, node.type, inputs_log, result, status)
@@ -166,7 +205,6 @@ class FlowExecutor:
         code = node.data.get('code')
         inputs = self.resolve_all_inputs(node.id)
         
-        # Auto-inject API keys if the code variable requests them
         if 'api_key' in code and 'api_key' not in inputs:
             inputs['api_key'] = self.keys.get('groq_api_key') or self.keys.get('openai_api_key')
 
@@ -178,7 +216,6 @@ class FlowExecutor:
             
             instance = ComponentClass()
             
-            # Filter inputs to match signature
             import inspect
             sig = inspect.signature(instance.build)
             valid_args = {k: v for k, v in inputs.items() if k in sig.parameters}
@@ -194,7 +231,6 @@ class FlowExecutor:
         data = node.data
         node_type = node.type
 
-        # 1. Models
         if node_type == 'groqModel':
             key = data.get('apiKey') or self.keys.get('groq_api_key')
             return Groq(id=data.get('model', "llama-3.3-70b-versatile"), api_key=key)
@@ -203,50 +239,39 @@ class FlowExecutor:
             key = data.get('apiKey') or self.keys.get('openai_api_key')
             return OpenAIChat(id=data.get('model', "gpt-4o"), api_key=key)
 
-        # 2. Tools
         if node_type == 'webSearchNode': return DuckDuckGoTools()
         if node_type == 'gmailNode':
             return SimpleGmailTools(sender_email=data.get('email'), app_password=data.get('password')) if SimpleGmailTools else None
 
-        # 3. Agents (FIXED LOGIC HERE)
         if node_type == 'agentNode':
-            # Collect ALL predecessors executed
             predecessors_results = []
             for u in self.graph.predecessors(node.id):
                 res = self.execute_node(u)
                 if res: predecessors_results.append(res)
 
-            # INTELLIGENT SORTING
             model = None
             tools = []
             knowledge = None
 
             for res in predecessors_results:
-                # Check if it's a Model
                 if isinstance(res, (Groq, OpenAIChat)):
                     model = res
-                # Check if it's a Tool (DuckDuckGo, etc)
                 elif hasattr(res, 'register') or isinstance(res, (DuckDuckGoTools, YFinanceTools)):
                     tools.append(res)
-                # Check if it's a Knowledge Base
                 elif hasattr(res, 'vector_db') or hasattr(res, 'search'):
                     knowledge = res
             
-            # If no model found, we rely on Agno default or error out
-            # To fix your specific error, we ensure model is passed if found
             return Agent(
-                model=model, # Will be None if not found, triggering Agno default (OpenAI)
+                model=model,
                 tools=tools,
                 knowledge=knowledge,
                 description=data.get('systemPrompt', "You are a helpful AI."),
                 markdown=True
             )
 
-        # 4. RAG Components
         if node_type == 'vectorStore':
-            pass # RAG logic typically handled by manager, or return KB object here if connected
+            pass 
 
-        # 5. I/O
         if node_type == 'chatInput': return None
         if node_type == 'textInput' or node_type == 'promptTemplate':
             return data.get('value') or data.get('template')
@@ -260,29 +285,22 @@ class FlowExecutor:
         print("--- Pipeline Started ---")
         self.execution_cache = {} 
         
-        # 1. Identify Key Nodes
         agent_node = next((n for n in self.nodes.values() if n.type == 'agentNode'), None)
-        
-        # Also look for Model Nodes if Agent is missing (Simple LLM Flow)
         model_node = next((n for n in self.nodes.values() if n.type in ['groqModel', 'openaiModel']), None)
-        
         custom_node = next((n for n in self.nodes.values() if n.data.get('isCustom')), None)
         
-        # Inject Chat Input
         chat_input_node = next((n for n in self.nodes.values() if n.type == 'chatInput'), None)
         if chat_input_node:
             self.execution_cache[chat_input_node.id] = message
             self.log_execution(chat_input_node.id, 'chatInput', {}, message)
 
         try:
-            # CASE A: Standard Agent Flow
             if agent_node:
                 agent_instance = self.execute_node(agent_node.id)
                 if isinstance(agent_instance, Agent):
                     return agent_instance.run(message).content
                 return str(agent_instance)
             
-            # CASE B: Simple Model Flow (No Agent Node)
             if model_node:
                 model_instance = self.execute_node(model_node.id)
                 if hasattr(model_instance, 'id'): 
@@ -290,7 +308,6 @@ class FlowExecutor:
                     return temp_agent.run(message).content
                 return str(model_instance)
 
-            # CASE C: Custom Component
             if custom_node:
                 res = self.execute_node(custom_node.id)
                 return str(res)
@@ -298,5 +315,8 @@ class FlowExecutor:
             return "Error: No valid Agent or Custom Logic found."
 
         except Exception as e:
-            traceback.print_exc()
-            return f"Execution Error: {str(e)}"
+            # We catch it here to return it to the frontend, but we also log it as an error
+            err_msg = f"Execution Error: {str(e)}"
+            # Log the final failure
+            self.log_execution("root", "pipeline", {}, err_msg, status="error")
+            return err_msg
