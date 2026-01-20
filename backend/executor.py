@@ -33,6 +33,7 @@ class FlowExecutor:
         self.edges = flow_data.edges
         self.keys = user_keys
         self.dataset = getattr(flow_data, 'dataset', None) # New Field
+        self.message = getattr(flow_data, 'message', "") # Store user message
         
         # Logging Metadata
         self.user_id = getattr(flow_data, 'user_id', None)
@@ -82,7 +83,7 @@ class FlowExecutor:
             pattern = r"(api_key|password|secret|token)\s*(=|:)\s*(['\"])(.*?)(\3)"
             return re.sub(pattern, r"\1\2\3********\5", data, flags=re.IGNORECASE)
 
-        return data
+        return str(data)
 
     def log_execution(self, node_id, node_type, inputs, output, status="success"):
         """Writes sanitized execution details to Supabase."""
@@ -282,13 +283,49 @@ class FlowExecutor:
 
         if node_type == 'dataVisualizationNode':
             # This node connects to an LLM (Groq/OpenAI) to generate chart config
-            model_input = self.resolve_node_input(node.id, 'modelInput')
+            # 1. Resolve Model (Robust Fallback)
+            model_input_id = self.get_source_node_id(node.id, 'modelInput')
+            model_input = None
+            
+            if model_input_id:
+                model_input = self.execute_node(model_input_id)
+            else:
+                # FALLBACK: Check ALL incoming edges for a Model/Agent
+                # self.graph is a NetworkX DiGraph
+                for u in self.graph.predecessors(node.id):
+                     source_node = self.nodes.get(u)
+                     # Check if it's a model-capable node
+                     if source_node and source_node.type in ['groqModel', 'openaiModel', 'agentNode']:
+                         model_input = self.execute_node(u)
+                         break
+
+            if not model_input:
+                # 2. Check Embedded Config (Self-contained Mode)
+                embedded_model = data.get('model', 'gpt-4o')
+                embedded_key = data.get('apiKey')
+                
+                if embedded_model:
+                     if "gpt" in embedded_model:
+                         key = embedded_key or self.keys.get('openai_api_key')
+                         model_input = OpenAIChat(id=embedded_model, api_key=key)
+                     else: # Default to Groq for Llama/Mixtral
+                         key = embedded_key or self.keys.get('groq_api_key')
+                         model_input = Groq(id=embedded_model, api_key=key)
             
             # 1. Resolve Dataset (Priority: Node Connection > Global Dataset)
             target_dataset = self.dataset # Default to flow global
             
-            # Check for connected 'dataSource'
-            data_source_node_id = self.get_source_node_id(node.id, 'dataSource')
+            # Check for connected 'dataInput' (Fixed handle name)
+            data_source_node_id = self.get_source_node_id(node.id, 'dataInput')
+            
+            # FALLBACK: Check ALL incoming edges for a Data Loader
+            if not data_source_node_id:
+                for u in self.graph.predecessors(node.id):
+                     source_node = self.nodes.get(u)
+                     if source_node and source_node.type == 'dataLoaderNode':
+                         data_source_node_id = u
+                         break
+
             if data_source_node_id:
                 source_node = self.nodes.get(data_source_node_id)
                 # Check if node has dataset in its data
@@ -299,8 +336,14 @@ class FlowExecutor:
             if not target_dataset or not target_dataset.get('columns') or len(target_dataset.get('columns')) == 0:
                 return "Error: No data loaded. Please click 'Load Data' on the Data Loader node and upload a file."
 
-            if not model_input or not hasattr(model_input, 'run'):
-                 return "Error: Please connect a Model or Agent to the Data Visualizer."
+            if not model_input or not hasattr(model_input, 'invoke'): # OpenAIChat uses invoke, Agent uses run/print_response
+                 # Create Agent wrapper if it's a raw model
+                 if isinstance(model_input, (Groq, OpenAIChat)):
+                     pass # We will use it directly
+                 elif isinstance(model_input, Agent):
+                     pass
+                 else:
+                     return "Error: Invalid Model Configuration."
             
             # Construct System Prompt for Visualization
             cols = target_dataset.get('columns', [])
@@ -335,8 +378,8 @@ Generate the JSON now. Return ONLY the JSON.
             # If the user connected a model to 'modelInput', use it.
             if isinstance(model_input, (Groq, OpenAIChat)):
                 agent = Agent(model=model_input, description=system_prompt, markdown=False)
-                # Use the last user message if available, otherwise default
-                user_query = self.messages[-1].content if self.messages else "Generate a visualization for this data."
+                # Use the user message if available, otherwise default
+                user_query = self.message if self.message else "Generate a visualization for this data."
                 
                 # Append dataset context to the user query to ensure visibility
                 context_str = f"\n\n[DATASET CONTEXT]\nColumns: {', '.join(cols)}\nSample Data (First 3 rows): {json.dumps(sample)}"

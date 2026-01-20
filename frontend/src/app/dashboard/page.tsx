@@ -815,9 +815,10 @@ function DashboardInner() {
         const agentNode = nodes.find(n => n.type === 'agentNode');
         const modelNode = nodes.find(n => n.type === 'groqModel' || n.type === 'openaiModel');
         const customNode = nodes.find(n => n.type === 'customComponent');
+        const vizNode = nodes.find(n => n.type === 'dataVisualizationNode');
 
-        if (!agentNode && !modelNode && !customNode) {
-            toast.error("Invalid Flow: Add an Agent, Model, or Custom Component.");
+        if (!agentNode && !modelNode && !customNode && !vizNode) {
+            toast.error("Invalid Flow: Add an Agent, Model, Data Visualizer, or Custom Component.");
             setLoading(false); return;
         }
 
@@ -825,9 +826,10 @@ function DashboardInner() {
         let apiKey = "";
         if (modelNode) apiKey = (modelNode.data as any).apiKey;
         else if (agentNode) apiKey = (agentNode.data as any).groqApiKey || (agentNode.data as any).apiKey;
+        else if (vizNode) apiKey = (vizNode.data as any).apiKey;
 
-        // Only warn if not using pure custom component
-        if (!apiKey && !customNode) {
+        // Only warn if not using pure custom component or visualizer (which can use env vars)
+        if (!apiKey && !customNode && !vizNode) {
             toast.error("Missing API Key in Agent/Model node.");
             setLoading(false); return;
         }
@@ -839,15 +841,24 @@ function DashboardInner() {
             if (openaiNode) openaiKey = (openaiNode.data as any).apiKey;
         }
 
+        // Resolve Dataset for Payload (Priority: State > Node)
+        let payloadDataset = currentDataset;
+        if (!payloadDataset) {
+            const loaderNode = nodes.find(n => n.type === 'dataLoaderNode');
+            if (loaderNode && (loaderNode.data as any).dataset) {
+                payloadDataset = (loaderNode.data as any).dataset;
+            }
+        }
+
         const payload = {
             nodes,
             edges,
             message: userMessage,
-            groq_api_key: apiKey,
             openai_api_key: openaiKey,
+            // ... other keys if needed
             user_id: userId,
             flow_id: currentFlowId,
-            dataset: currentDataset // Pass dataset context
+            dataset: payloadDataset
         };
 
         try {
@@ -874,18 +885,25 @@ function DashboardInner() {
 
             let chartConfig: ChartConfig | undefined;
             let chartDataset: Dataset | undefined;
+
             // Try to detect chart config in response
             try {
-                if (typeof finalContent === 'string' && finalContent.trim().startsWith('{')) {
-                    const parsed = JSON.parse(finalContent);
+                let parsed: any = null;
 
+                if (typeof finalContent === 'object' && finalContent !== null) {
+                    parsed = finalContent;
+                } else if (typeof finalContent === 'string' && finalContent.trim().startsWith('{')) {
+                    parsed = JSON.parse(finalContent);
+                }
+
+                if (parsed) {
                     // NEW: Structure { type: "chart_response", config: ..., dataset: ... }
                     if (parsed.type === 'chart_response' && parsed.config && parsed.dataset) {
                         chartConfig = parsed.config;
                         chartDataset = parsed.dataset;
                         finalContent = "Here is the visualization you requested:";
                     }
-                    // FALLBACK: Just Config (Legacy)
+                    // FALLBACK: Just Config (Legacy/Raw LLM)
                     else if (parsed.type && ['bar', 'line', 'pie', 'scatter', 'radar', 'doughnut'].includes(parsed.type)) {
                         chartConfig = parsed;
                     }
