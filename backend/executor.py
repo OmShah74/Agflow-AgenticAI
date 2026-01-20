@@ -32,6 +32,7 @@ class FlowExecutor:
         self.nodes = {n.id: n for n in flow_data.nodes}
         self.edges = flow_data.edges
         self.keys = user_keys
+        self.dataset = getattr(flow_data, 'dataset', None) # New Field
         
         # Logging Metadata
         self.user_id = getattr(flow_data, 'user_id', None)
@@ -48,10 +49,13 @@ class FlowExecutor:
                 self.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
             except Exception as e:
                 print(f"Supabase Init Error: {e}")
-
-    # ------------------------------------------------------------------
-    # SANITIZATION & LOGGING
-    # ------------------------------------------------------------------
+    def get_source_node_id(self, target_node_id: str, target_handle: str) -> str:
+        for edge in self.edges:
+            # Check target and handle (if handle logic is implemented in edge data)
+            # EdgeData Pydantic model has targetHandle
+            if edge.target == target_node_id and edge.targetHandle == target_handle:
+                return edge.source
+        return None
     def _sanitize_data(self, data: Any) -> Any:
         """
         Recursively removes sensitive keys from dicts and 
@@ -276,6 +280,102 @@ class FlowExecutor:
         if node_type == 'textInput' or node_type == 'promptTemplate':
             return data.get('value') or data.get('template')
 
+        if node_type == 'dataVisualizationNode':
+            # This node connects to an LLM (Groq/OpenAI) to generate chart config
+            model_input = self.resolve_node_input(node.id, 'modelInput')
+            
+            # 1. Resolve Dataset (Priority: Node Connection > Global Dataset)
+            target_dataset = self.dataset # Default to flow global
+            
+            # Check for connected 'dataSource'
+            data_source_node_id = self.get_source_node_id(node.id, 'dataSource')
+            if data_source_node_id:
+                source_node = self.nodes.get(data_source_node_id)
+                # Check if node has dataset in its data
+                if source_node and source_node.data.get('dataset'):
+                    target_dataset = source_node.data.get('dataset')
+            
+            # 2. Strict Validation
+            if not target_dataset or not target_dataset.get('columns') or len(target_dataset.get('columns')) == 0:
+                return "Error: No data loaded. Please click 'Load Data' on the Data Loader node and upload a file."
+
+            if not model_input or not hasattr(model_input, 'run'):
+                 return "Error: Please connect a Model or Agent to the Data Visualizer."
+            
+            # Construct System Prompt for Visualization
+            cols = target_dataset.get('columns', [])
+            sample = target_dataset.get('data', [])[:3]
+            
+            system_prompt = f"""You are a specialized JSON generator for a Charting Library.
+YOU MUST NOT GENERATE PYTHON CODE.
+YOU MUST NOT GENERATE EXPLANATIONS.
+YOU MUST NOT GENERATE MARKDOWN.
+
+OUTPUT FORMAT:
+Strict valid JSON matching this schema exactly:
+{{
+  "type": "bar|line|pie|scatter|radar|doughnut",
+  "title": "Chart Title",
+  "description": "Brief description of the insight",
+  "xAxis": "column_name_for_x",
+  "yAxis": "column_name_for_y",
+  "dataKeys": ["column_name_value"],
+  "colors": ["hsl(var(--chart-1))", "hsl(var(--chart-2))"],
+  "legend": true | false
+}}
+
+Dataset Context:
+- Columns: {", ".join(cols)}
+- Sample Data: {json.dumps(sample)}
+
+If the user asks for "code" or "python", IGNORE THEM and generate the chart JSON.
+Generate the JSON now. Return ONLY the JSON.
+"""
+            # We need an agent/model to run this. 
+            # If the user connected a model to 'modelInput', use it.
+            if isinstance(model_input, (Groq, OpenAIChat)):
+                agent = Agent(model=model_input, description=system_prompt, markdown=False)
+                # Use the last user message if available, otherwise default
+                user_query = self.messages[-1].content if self.messages else "Generate a visualization for this data."
+                
+                # Append dataset context to the user query to ensure visibility
+                context_str = f"\n\n[DATASET CONTEXT]\nColumns: {', '.join(cols)}\nSample Data (First 3 rows): {json.dumps(sample)}"
+                final_prompt = user_query + context_str
+                
+                raw_response = agent.run(final_prompt).content
+                
+                # Robust JSON Extraction
+                cleaned_response = raw_response.strip()
+                
+                # Handle Markdown code blocks if present
+                if "```" in cleaned_response:
+                    # Extract content between first set of ```json (or just ```) and ```
+                    match = re.search(r"```(?:json)?\s*(.*?)\s*```", cleaned_response, re.DOTALL)
+                    if match:
+                        cleaned_response = match.group(1)
+                
+                # Validate JSON - if valid, return it. If not, return raw response (which will show as text error)
+                try:
+                    # Try to parse to ensure it's valid JSON
+                    json_config = json.loads(cleaned_response)
+                    
+                    # Return Structured Response with Dataset
+                    return {
+                        "type": "chart_response",
+                        "config": json_config,
+                        "dataset": {
+                            "name": target_dataset.get('name', 'Dataset'),
+                            "columns": target_dataset.get('columns', []),
+                            "data": target_dataset.get('data', [])
+                        }
+                    }
+                except json.JSONDecodeError:
+                    # If we can't extract JSON, return the raw text so the user sees the explanation
+                    print(f"JSON Parse Error. Raw: {raw_response[:100]}...")
+                    return raw_response
+            
+            return "Error: Please connect a Model or Agent to the Data Visualizer."
+
         return None
 
     # ------------------------------------------------------------------
@@ -288,6 +388,7 @@ class FlowExecutor:
         agent_node = next((n for n in self.nodes.values() if n.type == 'agentNode'), None)
         model_node = next((n for n in self.nodes.values() if n.type in ['groqModel', 'openaiModel']), None)
         custom_node = next((n for n in self.nodes.values() if n.data.get('isCustom')), None)
+        viz_node = next((n for n in self.nodes.values() if n.type == 'dataVisualizationNode'), None)
         
         chat_input_node = next((n for n in self.nodes.values() if n.type == 'chatInput'), None)
         if chat_input_node:
@@ -295,6 +396,11 @@ class FlowExecutor:
             self.log_execution(chat_input_node.id, 'chatInput', {}, message)
 
         try:
+            # Priority 1: Visualization Node
+            if viz_node:
+                # This node returns the structured JSON dict directly
+                return self.execute_node(viz_node.id)
+
             if agent_node:
                 agent_instance = self.execute_node(agent_node.id)
                 if isinstance(agent_instance, Agent):

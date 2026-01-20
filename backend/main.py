@@ -1,6 +1,10 @@
 import shutil
 import os
 import uvicorn
+import requests
+import pandas as pd
+from bs4 import BeautifulSoup
+import io
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -23,6 +27,9 @@ class ProcessDocRequest(BaseModel):
     file_path: str
     table_name: str
     openai_api_key: str
+
+class ScrapeRequest(BaseModel):
+    url: str
 
 # --- CORS ---
 origins = [
@@ -100,6 +107,39 @@ async def process_document(request: ProcessDocRequest):
         return {"status": "success", "message": "Document embedded successfully"}
     except Exception as e:
         print(f"Processing Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/scrape")
+async def scrape_url(request: ScrapeRequest):
+    try:
+        # Simple table scraping
+        response = requests.get(request.url, headers={"User-Agent": "Mozilla/5.0"})
+        if response.status_code != 200:
+            raise Exception(f"Failed to fetch URL: {response.status_code}")
+            
+        # Try pandas read_html first
+        try:
+            dfs = pd.read_html(io.StringIO(response.text))
+            if dfs:
+                df = dfs[0] # Take first table
+                # Clean up
+                df = df.fillna("")
+                return {
+                    "data": df.to_dict(orient="records"),
+                    "columns": list(df.columns)
+                }
+        except Exception:
+            pass # Fallback
+            
+        # Fallback: Just return text content (not ideal for visualization but valid data)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        text = soup.get_text()[:5000] # Limit size
+        return {
+            "data": [{"content": text}],
+            "columns": ["content"]
+        }
+    except Exception as e:
+        print(f"Scrape Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/run_flow")

@@ -23,4 +23,5 @@ class FlowRequest(BaseModel):
     groq_api_key: Optional[str] = None
     user_id: Optional[str] = None
     flow_id: Optional[str] = None
+    dataset: Optional[Dict[str, Any]] = None
     
