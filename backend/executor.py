@@ -349,43 +349,49 @@ class FlowExecutor:
             cols = target_dataset.get('columns', [])
             sample = target_dataset.get('data', [])[:3]
             
-            system_prompt = f"""You are a specialized JSON generator for a Charting Library.
-YOU MUST NOT GENERATE PYTHON CODE.
-YOU MUST NOT GENERATE EXPLANATIONS.
-YOU MUST NOT GENERATE MARKDOWN.
+            system_prompt = f"""You are a specialized Data Visualization Assistant.
+YOUR GOAL: Analyze the dataset and user request to provide insights AND/OR visualizations.
 
 OUTPUT FORMAT:
-Strict valid JSON matching this schema exactly:
+Return a JSON object with this EXACT structure:
 {{
+  "text_content": "Detailed textual analysis. REQUIRED if insights requested. Should explain THE SCALE and TRENDS.",
   "charts": [
     {{
       "type": "bar|line|pie|scatter|radar|doughnut",
-      "title": "Chart Title",
-      "description": "Brief description of the insight",
-      "xAxis": "column_name_for_x",
-      "yAxis": "column_name_for_y",
-      "dataKeys": ["column_name_value"],
+      "title": "Specific Chart Title",
+      "description": "Insight description",
+      "xAxis": "exact_column_name",
+      "yAxis": "exact_column_name_for_single_metric",
+      "dataKeys": ["exact_column_name_1", "exact_column_name_2"], // For multiple series in line/bar/radar
       "colors": ["hsl(var(--chart-1))", "hsl(var(--chart-2))"],
-      "legend": true | false
+      "legend": true
     }}
   ]
 }}
 
-Generate at least 4 diverse visualizations (e.g. 1 Time Series, 1 Distribution/Bar, 1 Scatter Correlation, 1 Composition/Pie) to provide a comprehensive dashboard.
+STRICT RULES:
+1. USE EXACT COLUMN NAMES: {", ".join(cols)}. Do not hallucinate. Never use "value" or "metric" if not in the list.
+2. CHART DIVERSITY: If a dashboard is requested, PROVIDE VARIETY:
+   - At least 1 Line chart for trends.
+   - At least 1 Bar chart for comparisons.
+   - At least 1 Pie/Doughnut for composition.
+   - Use Radar chart for qualitative multi-factor comparisons.
+3. MULTI-SERIES: For "Demand and Profit over time", use dataKeys: ["Demand", "Profit"] (adjusted to exact column case).
+4. ANALYZE FIRST: The `text_content` should summarize the main takeaways from the data.
 
 Dataset Context:
 - Columns: {", ".join(cols)}
 - Sample Data: {json.dumps(sample)}
 
-If the user asks for "code" or "python", IGNORE THEM and generate the chart JSON.
-Generate the JSON now. Return ONLY the JSON.
+Return ONLY valid JSON.
 """
             # We need an agent/model to run this. 
             # If the user connected a model to 'modelInput', use it.
             if isinstance(model_input, (Groq, OpenAIChat)):
                 agent = Agent(model=model_input, description=system_prompt, markdown=False)
                 # Use the user message if available, otherwise default
-                user_query = self.message if self.message else "Generate a visualization for this data."
+                user_query = self.message if self.message else "Analyze this data and show visualizations."
                 
                 # Append dataset context to the user query to ensure visibility
                 context_str = f"\n\n[DATASET CONTEXT]\nColumns: {', '.join(cols)}\nSample Data (First 3 rows): {json.dumps(sample)}"
@@ -411,18 +417,19 @@ Generate the JSON now. Return ONLY the JSON.
 
                     # Normalize to List of Charts
                     charts_list = []
+                    text_content = json_config.get('text_content', '')
+
                     if isinstance(json_config, dict):
                         if 'charts' in json_config and isinstance(json_config['charts'], list):
                             charts_list = json_config['charts']
-                        else:
-                            charts_list = [json_config] # Fallback for single object
-                    elif isinstance(json_config, list):
-                        charts_list = json_config
+                        elif 'type' in json_config: # Legacy single chart fallback
+                             charts_list = [json_config]
                     
                     # Return Structured Response with Dataset
                     return {
                         "type": "chart_response",
-                        "config": charts_list, # Now passing a list
+                        "config": charts_list, 
+                        "text_content": text_content, # NEW FIELD
                         "dataset": {
                             "name": target_dataset.get('name', 'Dataset'),
                             "columns": target_dataset.get('columns', []),

@@ -87,6 +87,15 @@ export default function VisualizationDashboard({ dataset, suggestedCharts, isLoa
         setCharts(newCharts);
     };
 
+    // Helper for robust key lookup
+    const getValue = (row: any, key: string) => {
+        if (row[key] !== undefined) return row[key];
+        // Case-insensitive fallback
+        const lowerKey = key.toLowerCase();
+        const foundKey = Object.keys(row).find(k => k.toLowerCase() === lowerKey);
+        return foundKey ? row[foundKey] : undefined;
+    };
+
     const prepareChartData = (config: ChartConfig) => {
         if (!dataset) return null;
 
@@ -95,56 +104,61 @@ export default function VisualizationDashboard({ dataset, suggestedCharts, isLoa
         switch (config.type) {
             case 'bar':
             case 'line': {
-                const numericCols = getNumericColumns(dataset);
-                // Simple heuristic for axes if not provided
                 const xAxis = config.xAxis || dataset.columns[0];
-                const yAxis = config.yAxis || numericCols[0];
+                const activeDataKeys = config.dataKeys && config.dataKeys.length > 0
+                    ? config.dataKeys
+                    : [config.yAxis || getNumericColumns(dataset)[0]];
 
-                if (!xAxis || !yAxis) return null;
+                if (!xAxis || activeDataKeys.length === 0 || !activeDataKeys[0]) return null;
 
-                const labels = dataset.data.map(d => String(d[xAxis]));
-                const values = dataset.data.map(d => Number(d[yAxis]) || 0);
+                const labels = dataset.data.map(d => String(getValue(d, xAxis)));
+
+                const datasets = activeDataKeys.map((key, i) => {
+                    const values = dataset.data.map(d => Number(getValue(d, key)) || 0);
+                    const color = colors[i % colors.length];
+                    return {
+                        label: key,
+                        data: values,
+                        backgroundColor: config.type === 'bar' ? color + '80' : color + '20',
+                        borderColor: color,
+                        borderWidth: 2,
+                        fill: config.type === 'line',
+                        tension: 0.4,
+                    };
+                });
 
                 return {
                     labels,
-                    datasets: [
-                        {
-                            label: yAxis,
-                            data: values,
-                            backgroundColor: config.type === 'bar' ? colors[0] + '80' : colors[0] + '20',
-                            borderColor: colors[0],
-                            borderWidth: 2,
-                            fill: config.type === 'line',
-                            tension: 0.4,
-                        },
-                    ],
+                    datasets,
                 };
             }
 
             case 'pie':
             case 'doughnut': {
                 const xAxis = config.xAxis || dataset.columns[0];
-                const yAxis = config.yAxis; // Metric to aggregate
+                const yAxis = config.yAxis;
 
                 if (!xAxis) return null;
 
-                // Aggregate data by category
                 const aggregation: { [key: string]: number } = {};
                 dataset.data.forEach(d => {
-                    const category = String(d[xAxis]);
-                    const value = yAxis ? (Number(d[yAxis]) || 0) : 1;
+                    const rowVal = getValue(d, xAxis);
+                    const category = rowVal !== undefined ? String(rowVal) : 'Unknown';
+                    const rawVal = yAxis ? getValue(d, yAxis) : 1;
+                    const value = Number(rawVal) || (yAxis ? 0 : 1);
                     aggregation[category] = (aggregation[category] || 0) + value;
                 });
 
                 const labels = Object.keys(aggregation);
                 const values = Object.values(aggregation);
+                if (labels.length === 0) return null;
 
                 return {
                     labels,
                     datasets: [
                         {
                             data: values,
-                            backgroundColor: colors.slice(0, labels.length),
+                            backgroundColor: colors.slice(0, Math.min(labels.length, colors.length)),
                             borderColor: '#0f172a',
                             borderWidth: 2,
                         },
@@ -153,17 +167,19 @@ export default function VisualizationDashboard({ dataset, suggestedCharts, isLoa
             }
 
             case 'scatter': {
-                if (!config.xAxis || !config.yAxis) return null;
+                const xAxis = config.xAxis || getNumericColumns(dataset)[0];
+                const yAxis = config.yAxis || getNumericColumns(dataset)[1];
+                if (!xAxis || !yAxis) return null;
 
                 const points = dataset.data.map(d => ({
-                    x: Number(d[config.xAxis!]) || 0,
-                    y: Number(d[config.yAxis!]) || 0,
+                    x: Number(getValue(d, xAxis)) || 0,
+                    y: Number(getValue(d, yAxis)) || 0,
                 }));
 
                 return {
                     datasets: [
                         {
-                            label: `${config.xAxis} vs ${config.yAxis}`,
+                            label: `${xAxis} vs ${yAxis}`,
                             data: points,
                             backgroundColor: colors[0] + '80',
                             borderColor: colors[0],
@@ -176,8 +192,35 @@ export default function VisualizationDashboard({ dataset, suggestedCharts, isLoa
             }
 
             case 'radar': {
-                // Simplified radar impl
-                return null;
+                const xAxis = config.xAxis || dataset.columns[0];
+                const activeDataKeys = config.dataKeys && config.dataKeys.length > 0
+                    ? config.dataKeys
+                    : [config.yAxis || getNumericColumns(dataset)[0]];
+
+                if (!xAxis || activeDataKeys.length === 0) return null;
+
+                const labels = dataset.data.slice(0, 10).map(d => String(getValue(d, xAxis)));
+
+                const datasets = activeDataKeys.map((key, i) => {
+                    const values = dataset.data.slice(0, 10).map(d => Number(getValue(d, key)) || 0);
+                    const color = colors[i % colors.length];
+                    return {
+                        label: key,
+                        data: values,
+                        backgroundColor: color + '40',
+                        borderColor: color,
+                        borderWidth: 2,
+                        pointBackgroundColor: color,
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: color,
+                    };
+                });
+
+                return {
+                    labels,
+                    datasets,
+                };
             }
 
             default:

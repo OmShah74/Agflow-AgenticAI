@@ -901,11 +901,11 @@ function DashboardInner() {
                 }
 
                 if (parsed) {
-                    // NEW: Structure { type: "chart_response", config: ..., dataset: ... }
+                    // NEW: Structure { type: "chart_response", config: ..., dataset: ..., text_content: ... }
                     if (parsed.type === 'chart_response' && parsed.config && parsed.dataset) {
                         chartConfigs = parsed.config; // Expecting Array
                         chartDataset = parsed.dataset;
-                        finalContent = "Here is the visualization dashboard you requested:";
+                        finalContent = parsed.text_content || ""; // Use AI text or empty
                     }
                     // FALLBACK: Just Config (Legacy/Raw LLM) - Wrap in array
                     else if (parsed.type && ['bar', 'line', 'pie', 'scatter', 'radar', 'doughnut'].includes(parsed.type)) {
@@ -1369,16 +1369,16 @@ function DashboardInner() {
                                                             {msg.isError ? "Error" : "Agent"}
                                                         </div>
                                                     )}
+                                                    {msg.content && (
+                                                        <div className="whitespace-pre-wrap mb-4">{msg.content}</div>
+                                                    )}
                                                     {msg.chartConfigs && msg.chartConfigs.length > 0 && (
-                                                        <div className="mt-4 w-full">
+                                                        <div className="w-full">
                                                             <VisualizationDashboard
                                                                 dataset={msg.dataset || currentDataset}
                                                                 suggestedCharts={msg.chartConfigs}
                                                             />
                                                         </div>
-                                                    )}
-                                                    {(!msg.chartConfigs || msg.chartConfigs.length === 0) && (
-                                                        <div className="whitespace-pre-wrap">{msg.content}</div>
                                                     )}
                                                 </div>
                                             </div>
