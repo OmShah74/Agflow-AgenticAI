@@ -17,6 +17,9 @@ export default memo(({ id, data, selected }: any) => {
             title="Data Visualizer"
             icon={BarChart3}
             color="purple"
+            data={data}
+            id={id}
+            nodeType="dataVisualizationNode"
         >
             <div className="p-3 space-y-4 w-64">
                 <div className="text-xs text-slate-400">

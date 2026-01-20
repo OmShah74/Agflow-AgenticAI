@@ -1,23 +1,23 @@
 export const NODE_PYTHON_TEMPLATES: Record<string, string> = {
-  // ------------------------------------------------------------------
-  // MODELS
-  // ------------------------------------------------------------------
-  groqModel: `from agno.models.groq import Groq
+    // ------------------------------------------------------------------
+    // MODELS
+    // ------------------------------------------------------------------
+    groqModel: `from agno.models.groq import Groq
 
 class CustomComponent:
     def build(self, model: str = "llama-3.3-70b-versatile", api_key: str = "") -> object:
         return Groq(id=model, api_key=api_key)`,
 
-  openaiModel: `from agno.models.openai import OpenAIChat
+    openaiModel: `from agno.models.openai import OpenAIChat
 
 class CustomComponent:
     def build(self, model: str = "gpt-4o", api_key: str = "") -> object:
         return OpenAIChat(id=model, api_key=api_key)`,
 
-  // ------------------------------------------------------------------
-  // AGENTS
-  // ------------------------------------------------------------------
-  agentNode: `from agno.agent import Agent
+    // ------------------------------------------------------------------
+    // AGENTS
+    // ------------------------------------------------------------------
+    agentNode: `from agno.agent import Agent
 
 class CustomComponent:
     def build(self, model: object = None, tools: list = [], system_prompt: str = "You are a helpful assistant") -> object:
@@ -30,10 +30,10 @@ class CustomComponent:
             show_tool_calls=True
         )`,
 
-  // ------------------------------------------------------------------
-  // PROMPTS & LOGIC
-  // ------------------------------------------------------------------
-  promptTemplate: `class CustomComponent:
+    // ------------------------------------------------------------------
+    // PROMPTS & LOGIC
+    // ------------------------------------------------------------------
+    promptTemplate: `class CustomComponent:
     def build(self, template: str, **kwargs) -> str:
         # Automatically formats inputs connected to dynamic handles
         try:
@@ -41,41 +41,41 @@ class CustomComponent:
         except Exception as e:
             return f"Error formatting template: {str(e)}"` ,
 
-  promptBuilder: `class CustomComponent:
+    promptBuilder: `class CustomComponent:
     def build(self, template: str, **kwargs) -> str:
         # Advanced builder logic can go here
         return template.format(**kwargs)`,
 
-  // ------------------------------------------------------------------
-  // INPUTS / OUTPUTS
-  // ------------------------------------------------------------------
-  chatInput: `class CustomComponent:
+    // ------------------------------------------------------------------
+    // INPUTS / OUTPUTS
+    // ------------------------------------------------------------------
+    chatInput: `class CustomComponent:
     def build(self, message: str) -> str:
         # This node acts as an entry point
         # You can preprocess the user message here
         return message`,
 
-  chatOutput: `class CustomComponent:
+    chatOutput: `class CustomComponent:
     def build(self, text: str) -> str:
         # This node acts as an exit point
         # You can post-process the final response here
         return text`,
 
-  textInput: `class CustomComponent:
+    textInput: `class CustomComponent:
     def build(self, value: str) -> str:
         return value`,
 
-  // ------------------------------------------------------------------
-  // TOOLS
-  // ------------------------------------------------------------------
-  webSearchNode: `from agno.tools.duckduckgo import DuckDuckGoTools
+    // ------------------------------------------------------------------
+    // TOOLS
+    // ------------------------------------------------------------------
+    webSearchNode: `from agno.tools.duckduckgo import DuckDuckGoTools
 
 class CustomComponent:
     def build(self) -> object:
         # Returns an initialized tool object
         return DuckDuckGoTools()`,
 
-  gmailNode: `from tools import SimpleGmailTools # Assumes local tools.py exists
+    gmailNode: `from tools import SimpleGmailTools # Assumes local tools.py exists
 
 class CustomComponent:
     def build(self, email: str, password: str) -> object:
@@ -84,21 +84,21 @@ class CustomComponent:
         except ImportError:
             return "Error: SimpleGmailTools not found in backend"`,
 
-  calculator: `from agno.tools.calculator import CalculatorTools
+    calculator: `from agno.tools.calculator import CalculatorTools
 
 class CustomComponent:
     def build(self) -> object:
         return CalculatorTools()`,
 
-  // ------------------------------------------------------------------
-  // RAG & DATA
-  // ------------------------------------------------------------------
-  pdfLoader: `class CustomComponent:
+    // ------------------------------------------------------------------
+    // RAG & DATA
+    // ------------------------------------------------------------------
+    pdfLoader: `class CustomComponent:
     def build(self, file_path: str) -> str:
         # Passes the file path string to the Vector Store
         return file_path`,
 
-  vectorStore: `from agno.knowledge.knowledge import Knowledge
+    vectorStore: `from agno.knowledge.knowledge import Knowledge
 from agno.vectordb.pgvector import PgVector
 from agno.knowledge.embedder.openai import OpenAIEmbedder
 import os
@@ -117,22 +117,68 @@ class CustomComponent:
         # Return Knowledge Base for Agent
         return Knowledge(vector_db=vector_db)`,
 
-  textSplitter: `class CustomComponent:
+    textSplitter: `class CustomComponent:
     def build(self, chunk_size: int = 1000, chunk_overlap: int = 200) -> dict:
         return {
             "chunk_size": int(chunk_size), 
             "chunk_overlap": int(chunk_overlap)
         }`,
 
-  // ------------------------------------------------------------------
-  // HELPERS
-  // ------------------------------------------------------------------
-  htmlRenderer: `class CustomComponent:
+    // ------------------------------------------------------------------
+    // HELPERS
+    // ------------------------------------------------------------------
+    htmlRenderer: `class CustomComponent:
     def build(self, html_content: str) -> str:
         # Returns HTML string for the frontend to render
         return html_content`,
+
+    // ------------------------------------------------------------------
+    // DATA & VISUALIZATION
+    // ------------------------------------------------------------------
+    dataLoaderNode: `import pandas as pd
+import io
+
+class CustomComponent:
+    def build(self, data: str = "id,value\\n1,10\\n2,20") -> dict:
+        # Load CSV data into a structred format
+        try:
+            df = pd.read_csv(io.StringIO(data))
+            return {
+                "name": "Loaded Dataset",
+                "columns": df.columns.tolist(),
+                "data": df.to_dict(orient='records')
+            }
+        except Exception as e:
+            return {"error": str(e)}`,
+
+    dataVisualizationNode: `from agno.agent import Agent
+from agno.models.openai import OpenAIChat
+import json
+
+class CustomComponent:
+    def build(self, model: object, dataset: dict, message: str = "Visualize this") -> dict:
+        # 1. Setup Agent
+        system_prompt = """
+        Generate 3 charts in JSON format: { "charts": [ { "type": "bar", ... } ] }
+        Types: bar, line, pie, scatter.
+        """
+        agent = Agent(model=model, description=system_prompt)
         
-  chatMemory: `class CustomComponent:
+        # 2. Prepare Context
+        rows = dataset.get('data', [])[:5] # Sample
+        prompt = f"{message}\\nData Sample: {json.dumps(rows)}"
+        
+        # 3. Run Agent
+        response = agent.run(prompt)
+        
+        # 4. Return Frontend-Compatible Response
+        return {
+            "type": "chart_response",
+            "config": response.content, # JSON String or Object
+            "dataset": dataset
+        }`,
+
+    chatMemory: `class CustomComponent:
     def build(self, session_id: str = "default") -> dict:
         return {"session_id": session_id, "type": "postgres_history"}`
 };

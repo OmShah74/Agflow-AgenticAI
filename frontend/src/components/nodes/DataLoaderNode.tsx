@@ -84,6 +84,9 @@ const DataLoaderNode = ({ id, data, selected }: any) => {
             icon={Database}
             color="purple"
             selected={selected}
+            data={data}
+            id={id}
+            nodeType="dataLoaderNode"
         >
             <div className="p-3 text-xs text-slate-400 w-64">
                 <p className="mb-2">
