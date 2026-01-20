@@ -4,6 +4,9 @@
 ![Stack](https://img.shields.io/badge/Stack-Next.js_|_FastAPI_|_Supabase-black)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
+![Fig 1: Agflow Home Page](README_Imgs/HomePage.png)
+<p align="center"><em>Fig 1: Agflow Home Page</em></p>
+
 Agflow is an open-source, low-code platform designed to build, test, and deploy Agentic AI workflows visually. Built on top of the Agno framework, it bridges the gap between drag-and-drop simplicity and code-first flexibility.
 
 It allows developers to orchestrate LLMs, Tools, and RAG (Retrieval-Augmented Generation) pipelines using a node-based interface, while retaining the ability to inject custom Python logic dynamically.
@@ -32,11 +35,20 @@ It allows developers to orchestrate LLMs, Tools, and RAG (Retrieval-Augmented Ge
 - **Multi-Model Support**: Native integration with Groq (Llama 3, Mixtral) and OpenAI (GPT-4o)
 - **Tool Integration**: Pre-built nodes for Web Search (DuckDuckGo), Gmail, Calculator, and Financial Data
 
+![Fig 2: Web Scraping Pipeline](README_Imgs/WebScraping.png)
+<p align="center"><em>Fig 2: Web Scraping Pipeline</em></p>
+
+![Fig 3: Execution Logs](README_Imgs/ExecutionLogs.png)
+<p align="center"><em>Fig 3: Execution Logs</em></p>
+
 ### 📚 Advanced RAG
 
 - **Knowledge Base Manager**: Dedicated interface to upload, manage, and process documents (PDFs)
 - **Vectorization**: Automatic chunking and embedding of documents into Supabase pgvector
 - **Context Injection**: Seamlessly retrieve relevant context for Agents during inference
+
+![Fig 4: Knowledge Base Management](README_Imgs/KnowledgeBase.png)
+<p align="center"><em>Fig 4: Knowledge Base Management</em></p>
 
 ### 📊 Advanced Visualization & UX
 
@@ -44,6 +56,12 @@ It allows developers to orchestrate LLMs, Tools, and RAG (Retrieval-Augmented Ge
 - **Data Insights**: Interactive dashboard showing dataset statistics (rows, columns, numeric/categorical breakdown)
 - **Enhanced Playground**: Resizable panel (up to 90% width) with a dedicated **Full Screen Mode** for immersive analysis
 - **Code-First Data Nodes**: Edit the internal Python code of Data Loaders and Visualizers to implement custom parsing or advanced charting logic
+
+<div align="center">
+  <img src="README_Imgs/DataViz1.png" width="49%" />
+  <img src="README_Imgs/DataViz2.png" width="49%" />
+  <p><em>Fig 5 & 6: Data Visualization Dashboards</em></p>
+</div>
 
 ### 🛠️ Code-First Extensibility
 
