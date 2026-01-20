@@ -1324,7 +1324,7 @@ function DashboardInner() {
                                 maxSize={90} // Increased from 40 to allows dragging
                                 className={`bg-slate-950 border-l border-slate-800 ${isMaximized ? '' : 'relative'}`}
                             >
-                                <div className={`${isMaximized ? 'fixed inset-0 z-[100] bg-slate-950 w-screen h-screen' : 'flex flex-col h-full'}`}>
+                                <div className={`${isMaximized ? 'fixed inset-0 z-[100] bg-slate-950 w-screen h-screen flex flex-col' : 'flex flex-col h-full'}`}>
                                     <div className="p-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm flex justify-between items-center">
                                         <h2 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
                                             <Play className="w-4 h-4 text-green-500" /> Playground
