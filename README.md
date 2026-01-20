@@ -38,6 +38,13 @@ It allows developers to orchestrate LLMs, Tools, and RAG (Retrieval-Augmented Ge
 - **Vectorization**: Automatic chunking and embedding of documents into Supabase pgvector
 - **Context Injection**: Seamlessly retrieve relevant context for Agents during inference
 
+### 📊 Advanced Visualization & UX
+
+- **Multi-Chart Dashboard**: Automatically generates multiple chart types (Bar, Line, Scatter, Pie) in a grid layout from a single dataset
+- **Data Insights**: Interactive dashboard showing dataset statistics (rows, columns, numeric/categorical breakdown)
+- **Enhanced Playground**: Resizable panel (up to 90% width) with a dedicated **Full Screen Mode** for immersive analysis
+- **Code-First Data Nodes**: Edit the internal Python code of Data Loaders and Visualizers to implement custom parsing or advanced charting logic
+
 ### 🛠️ Code-First Extensibility
 
 - **Custom Python Nodes**: Write raw Python code directly in the browser using the integrated Monaco Editor
@@ -193,7 +200,16 @@ To chat with your PDF documents:
 5. On the canvas:
    - Add a **PDF Loader** node (select your file)
    - Connect it to a **Supabase Vector** node
+   - Connect it to a **Supabase Vector** node
    - Connect the Vector node to an **Agno Agent**
+
+### Data Visualization
+
+1. Add a **Data Loader** node (Load via CSV, JSON, URL, or Manual Text).
+2. Connect it to a **Data Visualizer** node.
+3. (Optional) Click the **Code `< >`** icon on the node header to customize the internal Python logic using the built-in Editor.
+4. Run the flow to generate a **Multi-Chart Dashboard** in the Playground.
+5. Use the **Maximize** button in the playground header to view charts in full screen.
 
 ### Custom Python Components
 
