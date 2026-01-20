@@ -123,7 +123,7 @@ interface ChatMessage {
     content: string;
     timestamp: number;
     isError?: boolean;
-    chartConfig?: ChartConfig; // Optional chart config
+    chartConfigs?: ChartConfig[]; // Optional chart config list
     dataset?: Dataset; // Data for the chart
 }
 
@@ -883,7 +883,7 @@ function DashboardInner() {
             }
 
 
-            let chartConfig: ChartConfig | undefined;
+            let chartConfigs: ChartConfig[] | undefined;
             let chartDataset: Dataset | undefined;
 
             // Try to detect chart config in response
@@ -899,25 +899,26 @@ function DashboardInner() {
                 if (parsed) {
                     // NEW: Structure { type: "chart_response", config: ..., dataset: ... }
                     if (parsed.type === 'chart_response' && parsed.config && parsed.dataset) {
-                        chartConfig = parsed.config;
+                        chartConfigs = parsed.config; // Expecting Array
                         chartDataset = parsed.dataset;
-                        finalContent = "Here is the visualization you requested:";
+                        finalContent = "Here is the visualization dashboard you requested:";
                     }
-                    // FALLBACK: Just Config (Legacy/Raw LLM)
+                    // FALLBACK: Just Config (Legacy/Raw LLM) - Wrap in array
                     else if (parsed.type && ['bar', 'line', 'pie', 'scatter', 'radar', 'doughnut'].includes(parsed.type)) {
-                        chartConfig = parsed;
+                        chartConfigs = [parsed];
                     }
                 }
             } catch (e) {
                 // Not a JSON chart
             }
 
+            // Append response to chat
             setChatHistory(prev => [...prev, {
                 role: 'assistant',
                 content: finalContent,
                 timestamp: Date.now(),
                 isError: isError,
-                chartConfig: chartConfig,
+                chartConfigs: chartConfigs, // Pass array
                 dataset: chartDataset
             }]);
 
@@ -1347,15 +1348,15 @@ function DashboardInner() {
                                                             {msg.isError ? "Error" : "Agent"}
                                                         </div>
                                                     )}
-                                                    {msg.chartConfig && (
-                                                        <div className="w-full mt-2 min-w-[300px]">
+                                                    {msg.chartConfigs && msg.chartConfigs.length > 0 && (
+                                                        <div className="mt-4 w-full">
                                                             <VisualizationDashboard
                                                                 dataset={msg.dataset || currentDataset}
-                                                                suggestedCharts={[msg.chartConfig]}
+                                                                suggestedCharts={msg.chartConfigs}
                                                             />
                                                         </div>
                                                     )}
-                                                    {!msg.chartConfig && (
+                                                    {(!msg.chartConfigs || msg.chartConfigs.length === 0) && (
                                                         <div className="whitespace-pre-wrap">{msg.content}</div>
                                                     )}
                                                 </div>

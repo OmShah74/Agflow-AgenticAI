@@ -357,15 +357,21 @@ YOU MUST NOT GENERATE MARKDOWN.
 OUTPUT FORMAT:
 Strict valid JSON matching this schema exactly:
 {{
-  "type": "bar|line|pie|scatter|radar|doughnut",
-  "title": "Chart Title",
-  "description": "Brief description of the insight",
-  "xAxis": "column_name_for_x",
-  "yAxis": "column_name_for_y",
-  "dataKeys": ["column_name_value"],
-  "colors": ["hsl(var(--chart-1))", "hsl(var(--chart-2))"],
-  "legend": true | false
+  "charts": [
+    {{
+      "type": "bar|line|pie|scatter|radar|doughnut",
+      "title": "Chart Title",
+      "description": "Brief description of the insight",
+      "xAxis": "column_name_for_x",
+      "yAxis": "column_name_for_y",
+      "dataKeys": ["column_name_value"],
+      "colors": ["hsl(var(--chart-1))", "hsl(var(--chart-2))"],
+      "legend": true | false
+    }}
+  ]
 }}
+
+Generate at least 4 diverse visualizations (e.g. 1 Time Series, 1 Distribution/Bar, 1 Scatter Correlation, 1 Composition/Pie) to provide a comprehensive dashboard.
 
 Dataset Context:
 - Columns: {", ".join(cols)}
@@ -401,11 +407,22 @@ Generate the JSON now. Return ONLY the JSON.
                 try:
                     # Try to parse to ensure it's valid JSON
                     json_config = json.loads(cleaned_response)
+                    if not json_config: raise ValueError("Empty JSON")
+
+                    # Normalize to List of Charts
+                    charts_list = []
+                    if isinstance(json_config, dict):
+                        if 'charts' in json_config and isinstance(json_config['charts'], list):
+                            charts_list = json_config['charts']
+                        else:
+                            charts_list = [json_config] # Fallback for single object
+                    elif isinstance(json_config, list):
+                        charts_list = json_config
                     
                     # Return Structured Response with Dataset
                     return {
                         "type": "chart_response",
-                        "config": json_config,
+                        "config": charts_list, # Now passing a list
                         "dataset": {
                             "name": target_dataset.get('name', 'Dataset'),
                             "columns": target_dataset.get('columns', []),
