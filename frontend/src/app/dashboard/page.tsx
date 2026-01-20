@@ -62,7 +62,10 @@ import {
     Copy,
     AlertCircle,
     CheckCircle,
-    PieChart
+    PieChart,
+    Maximize2,
+    Minimize2,
+    X
 } from 'lucide-react';
 
 // --- UI Components ---
@@ -192,6 +195,7 @@ function DashboardInner() {
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
     const [loading, setLoading] = useState(false);
     const [showPlayground, setShowPlayground] = useState(true);
+    const [isMaximized, setIsMaximized] = useState(false);
 
     // Persistence & Metadata
     const [flowName, setFlowName] = useState("Untitled Flow");
@@ -1314,12 +1318,29 @@ function DashboardInner() {
                     {showPlayground && (
                         <>
                             <ResizablePanels.PanelResizeHandle className="w-1 bg-slate-900 hover:bg-purple-600 transition-colors cursor-col-resize" />
-                            <ResizablePanels.Panel defaultSize={25} minSize={20} maxSize={40} className="bg-slate-950 border-l border-slate-800">
-                                <div className="flex flex-col h-full">
+                            <ResizablePanels.Panel
+                                defaultSize={25}
+                                minSize={20}
+                                maxSize={90} // Increased from 40 to allows dragging
+                                className={`bg-slate-950 border-l border-slate-800 ${isMaximized ? '' : 'relative'}`}
+                            >
+                                <div className={`${isMaximized ? 'fixed inset-0 z-[100] bg-slate-950 w-screen h-screen' : 'flex flex-col h-full'}`}>
                                     <div className="p-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm flex justify-between items-center">
                                         <h2 className="font-semibold text-sm text-slate-200 flex items-center gap-2">
                                             <Play className="w-4 h-4 text-green-500" /> Playground
                                         </h2>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => setIsMaximized(!isMaximized)}
+                                                className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"
+                                                title={isMaximized ? "Minimize" : "Maximize"}
+                                            >
+                                                {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                                            </button>
+                                            <button onClick={() => setShowPlayground(false)} className="md:hidden">
+                                                <X size={16} className="text-slate-400" />
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* Chat History Area */}
@@ -1341,7 +1362,7 @@ function DashboardInner() {
                                                     : msg.isError
                                                         ? 'bg-red-900/20 border border-red-900 text-red-200 rounded-bl-none'
                                                         : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-none'
-                                                    }`}>
+                                                    } ${isMaximized && msg.role !== 'user' ? 'max-w-[70%] text-base' : ''}`}> {/* Larger text in fullscreen */}
                                                     {msg.role === 'assistant' && (
                                                         <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] uppercase font-bold tracking-wider">
                                                             {msg.isError ? <AlertCircle size={10} className="text-red-400" /> : <Bot size={10} />}
