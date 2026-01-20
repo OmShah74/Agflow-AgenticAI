@@ -4,8 +4,10 @@
 ![Stack](https://img.shields.io/badge/Stack-Next.js_|_FastAPI_|_Supabase-black)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-![Fig 1: Agflow Home Page](README_Imgs/HomePage.png)
-<p align="center"><em>Fig 1: Agflow Home Page</em></p>
+<div align="center">
+  <img src="README_Imgs/HomePage.png" width="80%" />
+  <p><em>Fig 1: Agflow Home Page</em></p>
+</div>
 
 Agflow is an open-source, low-code platform designed to build, test, and deploy Agentic AI workflows visually. Built on top of the Agno framework, it bridges the gap between drag-and-drop simplicity and code-first flexibility.
 
@@ -35,11 +37,15 @@ It allows developers to orchestrate LLMs, Tools, and RAG (Retrieval-Augmented Ge
 - **Multi-Model Support**: Native integration with Groq (Llama 3, Mixtral) and OpenAI (GPT-4o)
 - **Tool Integration**: Pre-built nodes for Web Search (DuckDuckGo), Gmail, Calculator, and Financial Data
 
-![Fig 2: Web Scraping Pipeline](README_Imgs/WebScraping.png)
-<p align="center"><em>Fig 2: Web Scraping Pipeline</em></p>
+<div align="center">
+  <img src="README_Imgs/WebScraping.png" width="80%" />
+  <p><em>Fig 2: Web Scraping Pipeline</em></p>
+</div>
 
-![Fig 3: Execution Logs](README_Imgs/ExecutionLogs.png)
-<p align="center"><em>Fig 3: Execution Logs</em></p>
+<div align="center">
+  <img src="README_Imgs/ExecutionLogs.png" width="80%" />
+  <p><em>Fig 3: Execution Logs</em></p>
+</div>
 
 ### 📚 Advanced RAG
 
@@ -47,8 +53,10 @@ It allows developers to orchestrate LLMs, Tools, and RAG (Retrieval-Augmented Ge
 - **Vectorization**: Automatic chunking and embedding of documents into Supabase pgvector
 - **Context Injection**: Seamlessly retrieve relevant context for Agents during inference
 
-![Fig 4: Knowledge Base Management](README_Imgs/KnowledgeBase.png)
-<p align="center"><em>Fig 4: Knowledge Base Management</em></p>
+<div align="center">
+  <img src="README_Imgs/KnowledgeBase.png" width="80%" />
+  <p><em>Fig 4: Knowledge Base Management</em></p>
+</div>
 
 ### 📊 Advanced Visualization & UX
 
@@ -217,7 +225,6 @@ To chat with your PDF documents:
 4. Click **Extract & Embed**. The status will change to "EMBEDDED"
 5. On the canvas:
    - Add a **PDF Loader** node (select your file)
-   - Connect it to a **Supabase Vector** node
    - Connect it to a **Supabase Vector** node
    - Connect the Vector node to an **Agno Agent**
 
