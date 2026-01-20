@@ -106,7 +106,7 @@ import os
 class CustomComponent:
     def build(self, table_name: str, file_path: str, openai_key: str) -> object:
         # Initialize Vector DB connection
-        db_url = os.getenv("DB_URL", "postgresql+psycopg://postgres:postgres@localhost:54322/postgres")
+        db_url = os.getenv("DB_URL", "yourpostgresurl")
         
         vector_db = PgVector(
             table_name=table_name,
