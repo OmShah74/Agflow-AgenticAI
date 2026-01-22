@@ -9,19 +9,18 @@ class NodeData(BaseModel):
 class EdgeData(BaseModel):
     source: str
     target: str
-    targetHandle: Optional[str] = None # <-- ADD THIS FIELD
-    sourceHandle: Optional[str] = None # Good practice to add this too
+    targetHandle: Optional[str] = None
+    sourceHandle: Optional[str] = None
     
     class Config:
-        extra = "ignore" # Still good to keep this
+        extra = "ignore"
 
 class FlowRequest(BaseModel):
     nodes: List[NodeData]
     edges: List[EdgeData]
     message: str
-    openai_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None # Crucial for RAG
     groq_api_key: Optional[str] = None
     user_id: Optional[str] = None
     flow_id: Optional[str] = None
     dataset: Optional[Dict[str, Any]] = None
-    

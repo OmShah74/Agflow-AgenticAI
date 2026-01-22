@@ -5,11 +5,12 @@ import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 import io
+import logging
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from dotenv import load_dotenv # NEW IMPORT
-from supabase import create_client, Client # NEW IMPORT
+from dotenv import load_dotenv 
+from supabase import create_client, Client 
 
 # 1. Load Environment Variables
 load_dotenv()
@@ -22,7 +23,7 @@ from rag_manager import RAGManager
 # Initialize App
 app = FastAPI()
 
-# Data Models
+# --- Data Models ---
 class ProcessDocRequest(BaseModel):
     file_path: str
     table_name: str
@@ -31,7 +32,8 @@ class ProcessDocRequest(BaseModel):
 class ScrapeRequest(BaseModel):
     url: str
 
-# --- CORS ---
+# --- CORS CONFIGURATION ---
+# Define allowed origins
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -41,6 +43,7 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
+    # Fix: Allow specific origins in production, wildcard in dev if needed
     allow_origins=origins if os.getenv("ENVIRONMENT") == "production" else ["*"],
     allow_credentials=True,
     allow_methods=["*"], 
@@ -83,30 +86,51 @@ async def get_logs(user_id: str):
         return response.data
     except Exception as e:
         print(f"❌ Error fetching logs: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return empty list instead of failing to keep UI stable
+        return []
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
         os.makedirs("uploads", exist_ok=True)
         file_path = f"uploads/{file.filename}"
+        
+        # Save file to disk
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        return {"filePath": os.path.abspath(file_path), "filename": file.filename}
+            
+        return {
+            "filePath": os.path.abspath(file_path), 
+            "filename": file.filename
+        }
     except Exception as e:
         print(f"Upload Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/knowledge/process")
 async def process_document(request: ProcessDocRequest):
+    """
+    Triggers the RAG extraction process using OpenAI Embeddings.
+    """
     try:
-        # Pass DB_URL explicitly if needed, or RAGManager loads from env
-        from executor import DB_URL 
-        rag = RAGManager(DB_URL)
-        rag.embed_document(request.file_path, request.table_name, request.openai_api_key)
+        # Load DB_URL directly from env to avoid circular imports with executor
+        db_url = os.getenv("DB_URL")
+        if not db_url:
+            raise ValueError("DB_URL environment variable is not set")
+
+        # Initialize RAG Manager
+        rag = RAGManager(db_url)
+        
+        # Explicitly pass the OpenAI key for embeddings
+        rag.embed_document(
+            file_path=request.file_path, 
+            table_name=request.table_name,
+            openai_key=request.openai_api_key
+        )
         return {"status": "success", "message": "Document embedded successfully"}
     except Exception as e:
         print(f"Processing Error: {e}")
+        # Return error with 500 status so frontend can catch it
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/scrape")
@@ -131,7 +155,7 @@ async def scrape_url(request: ScrapeRequest):
         except Exception:
             pass # Fallback
             
-        # Fallback: Just return text content (not ideal for visualization but valid data)
+        # Fallback: Just return text content
         soup = BeautifulSoup(response.text, 'html.parser')
         text = soup.get_text()[:5000] # Limit size
         return {
@@ -145,10 +169,20 @@ async def scrape_url(request: ScrapeRequest):
 @app.post("/run_flow")
 async def run_flow(request: FlowRequest):
     try:
-        keys = { "groq_api_key": request.groq_api_key, "openai_api_key": request.openai_api_key }
+        # Prepare keys
+        keys = { 
+            "groq_api_key": request.groq_api_key, 
+            "openai_api_key": request.openai_api_key 
+        }
+        
+        # Initialize Executor
         executor = FlowExecutor(request, keys)
+        
+        # Run Logic
         result = executor.execute(request.message)
+        
         return {"response": result}
+        
     except Exception as e:
         import traceback
         traceback.print_exc()
