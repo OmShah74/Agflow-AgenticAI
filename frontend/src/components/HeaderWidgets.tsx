@@ -22,7 +22,7 @@ export default function HeaderWidgets() {
         <TooltipProvider>
             <Tooltip>
                 <TooltipTrigger asChild>
-                    <a href="https://github.com/agno-agi/agflow" target="_blank" rel="noreferrer" className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors">
+                    <a href="https://github.com/OmShah74/Agflow-AgenticAI" target="_blank" rel="noreferrer" className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors">
                         <Github size={16} />
                     </a>
                 </TooltipTrigger>
