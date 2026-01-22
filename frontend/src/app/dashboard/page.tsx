@@ -7,6 +7,7 @@ import React, {
     useMemo,
     useRef
 } from 'react';
+import Image from 'next/image';
 
 // --- React Flow Imports ---
 import {
@@ -214,6 +215,11 @@ function DashboardInner() {
     // ---------------------------------------------------------------------------
     // EFFECT: AUTHENTICATION & INITIAL LOAD
     // ---------------------------------------------------------------------------
+    const [userName, setUserName] = useState<string | null>(null);
+
+    // ---------------------------------------------------------------------------
+    // EFFECT: AUTHENTICATION & INITIAL LOAD
+    // ---------------------------------------------------------------------------
     useEffect(() => {
         const checkUser = async () => {
             const { data: { user } } = await supabase.auth.getUser();
@@ -221,6 +227,10 @@ function DashboardInner() {
                 router.push('/login');
             } else {
                 setUserId(user.id);
+                // Extract just the first name
+                const fullName = user.user_metadata?.fullName || user.user_metadata?.full_name || user.email || "";
+                const firstName = fullName.split(' ')[0];
+                setUserName(firstName);
                 loadSavedFlows(user.id);
             }
         };
@@ -1093,12 +1103,20 @@ function DashboardInner() {
                 {/* Right Panel: Templates */}
                 <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden bg-slate-950">
                     <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10"></div>
+
+                    {/* Background Logo Watermark */}
+                    <div className="absolute -right-60 -bottom-60 opacity-[0.02] pointer-events-none grayscale select-none">
+                        <Image src="/logo.png" alt="" width={1000} height={1000} />
+                    </div>
+
                     <div className="z-10 text-center max-w-5xl px-6 w-full">
                         <div className="flex flex-col items-center justify-center mb-10">
-                            <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-indigo-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-purple-900/50 mb-6 ring-4 ring-slate-900">
-                                <Bot className="text-white w-9 h-9" />
+                            <div className="w-24 h-24 bg-slate-900 rounded-2xl flex items-center justify-center shadow-2xl mb-6 ring-1 ring-slate-800 p-3">
+                                <Image src="/logo.png" alt="Agflow Logo" width={80} height={80} className="rounded-xl shadow-lg" />
                             </div>
-                            <h1 className="text-5xl font-bold text-white tracking-tight mb-3">Agflow</h1>
+                            <h1 className="text-5xl font-bold text-white tracking-tight mb-3">
+                                Welcome to Agflow{userName ? `, ${userName}` : ''}
+                            </h1>
                             <p className="text-slate-400 text-lg max-w-lg mx-auto leading-relaxed">
                                 Visual AI Agent Orchestration.
                             </p>
