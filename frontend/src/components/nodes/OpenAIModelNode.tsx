@@ -10,7 +10,7 @@ export default function OpenAIModelNode({ data, id, selected }: NodeProps<any>) 
     <BaseNode 
         title="OpenAI Model" 
         icon={Cpu} 
-        color="purple" 
+        color="green" // Changed to Green to match Agent's Model Input
         data={data} 
         id={id} 
         selected={selected} 
@@ -27,8 +27,11 @@ export default function OpenAIModelNode({ data, id, selected }: NodeProps<any>) 
 
           {/* Model Name Selector */}
           <NodeField label="Model Name" id="model" inputType="none">
-             <Select onValueChange={(v) => data.onChange(id, { ...data, model: v })} defaultValue={data.model || "gpt-4o"}>
-                <SelectTrigger className="h-8 text-xs bg-slate-900 border-slate-700 text-slate-300 focus:ring-purple-500/20">
+             <Select 
+                onValueChange={(v) => data.onChange(id, { ...data, model: v })} 
+                defaultValue={data.model || "gpt-4o"}
+             >
+                <SelectTrigger className="h-8 text-xs bg-slate-900 border-slate-700 text-slate-300 focus:ring-green-500/20">
                     <SelectValue placeholder="Select Model" />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-900 border-slate-700 text-slate-300">
@@ -45,8 +48,9 @@ export default function OpenAIModelNode({ data, id, selected }: NodeProps<any>) 
                 <Key className="absolute left-2 top-2.5 w-3 h-3 text-slate-500" />
                 <Input 
                     type="password" 
-                    className="h-8 pl-8 text-xs bg-slate-900 border-slate-700 text-slate-300 placeholder:text-slate-600 focus:border-purple-500 transition-colors" 
+                    className="h-8 pl-8 text-xs bg-slate-900 border-slate-700 text-slate-300 placeholder:text-slate-600 focus:border-green-500 transition-colors" 
                     placeholder="sk-..."
+                    // FIX: Ensure value is never undefined to prevent console errors
                     value={data.apiKey || ''}
                     onChange={(e) => data.onChange(id, { ...data, apiKey: e.target.value })}
                 />
@@ -54,7 +58,7 @@ export default function OpenAIModelNode({ data, id, selected }: NodeProps<any>) 
           </NodeField>
 
           {/* Output Handle */}
-          <NodeField label="Model Output" id="out" inputType="source" handleColor="purple">
+          <NodeField label="Model Output" id="out" inputType="source" handleColor="green">
              <div className="text-right text-[10px] text-slate-500">LLM Instance</div>
           </NodeField>
       </div>

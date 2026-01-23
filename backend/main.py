@@ -28,6 +28,7 @@ class ProcessDocRequest(BaseModel):
     file_path: str
     table_name: str
     openai_api_key: str
+    document_id: str
 
 class ScrapeRequest(BaseModel):
     url: str
@@ -109,28 +110,22 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.post("/knowledge/process")
 async def process_document(request: ProcessDocRequest):
-    """
-    Triggers the RAG extraction process using OpenAI Embeddings.
-    """
     try:
-        # Load DB_URL directly from env to avoid circular imports with executor
         db_url = os.getenv("DB_URL")
-        if not db_url:
-            raise ValueError("DB_URL environment variable is not set")
+        if not db_url: raise ValueError("DB_URL missing")
 
-        # Initialize RAG Manager
         rag = RAGManager(db_url)
         
-        # Explicitly pass the OpenAI key for embeddings
+        # Pass document_id to the manager
         rag.embed_document(
             file_path=request.file_path, 
             table_name=request.table_name,
-            openai_key=request.openai_api_key
+            openai_key=request.openai_api_key,
+            document_id=request.document_id # <--- NEW ARGUMENT
         )
         return {"status": "success", "message": "Document embedded successfully"}
     except Exception as e:
         print(f"Processing Error: {e}")
-        # Return error with 500 status so frontend can catch it
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/scrape")

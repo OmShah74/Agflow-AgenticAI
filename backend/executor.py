@@ -50,6 +50,7 @@ class FlowExecutor:
                 self.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
             except Exception as e:
                 print(f"Supabase Init Error: {e}")
+
     def get_source_node_id(self, target_node_id: str, target_handle: str) -> str:
         for edge in self.edges:
             # Check target and handle (if handle logic is implemented in edge data)
@@ -57,6 +58,7 @@ class FlowExecutor:
             if edge.target == target_node_id and edge.targetHandle == target_handle:
                 return edge.source
         return None
+
     def _sanitize_data(self, data: Any) -> Any:
         """
         Recursively removes sensitive keys from dicts and 
@@ -265,7 +267,27 @@ class FlowExecutor:
                     tools.append(res)
                 elif hasattr(res, 'vector_db') or hasattr(res, 'search'):
                     knowledge = res
-            
+
+            # --- RAG: FILTERING LOGIC ---
+            # If explicit knowledge object (from Custom) not found, check standard Vector Store
+            if not knowledge:
+                for u in self.graph.predecessors(node.id):
+                    pred_node = self.nodes[u]
+                    if pred_node.type == 'vectorStore':
+                        # Get ID and Table from the node
+                        index_id = pred_node.data.get('indexId')
+                        table_name = pred_node.data.get('tableName', 'vector_documents')
+                        openai_key = self.keys.get('openai_api_key')
+
+                        if self.get_rag_manager() and openai_key:
+                            # Initialize KB with the document ID filter
+                            knowledge = self.get_rag_manager().get_knowledge_base(
+                                table_name=table_name,
+                                openai_key=openai_key,
+                                document_id_filter=index_id # Pass the partition ID
+                            )
+                        break
+
             return Agent(
                 model=model,
                 tools=tools,
@@ -452,11 +474,17 @@ Return ONLY valid JSON.
         print("--- Pipeline Started ---")
         self.execution_cache = {} 
         
+        # 1. Identify Key Nodes
         agent_node = next((n for n in self.nodes.values() if n.type == 'agentNode'), None)
+        
+        # Also look for Model Nodes if Agent is missing (Simple LLM Flow)
         model_node = next((n for n in self.nodes.values() if n.type in ['groqModel', 'openaiModel']), None)
+        
         custom_node = next((n for n in self.nodes.values() if n.data.get('isCustom')), None)
+        
         viz_node = next((n for n in self.nodes.values() if n.type == 'dataVisualizationNode'), None)
         
+        # Inject Chat Input
         chat_input_node = next((n for n in self.nodes.values() if n.type == 'chatInput'), None)
         if chat_input_node:
             self.execution_cache[chat_input_node.id] = message
@@ -465,15 +493,16 @@ Return ONLY valid JSON.
         try:
             # Priority 1: Visualization Node
             if viz_node:
-                # This node returns the structured JSON dict directly
                 return self.execute_node(viz_node.id)
 
+            # CASE A: Standard Agent Flow
             if agent_node:
                 agent_instance = self.execute_node(agent_node.id)
                 if isinstance(agent_instance, Agent):
                     return agent_instance.run(message).content
                 return str(agent_instance)
             
+            # CASE B: Simple Model Flow (No Agent Node)
             if model_node:
                 model_instance = self.execute_node(model_node.id)
                 if hasattr(model_instance, 'id'): 
@@ -481,6 +510,7 @@ Return ONLY valid JSON.
                     return temp_agent.run(message).content
                 return str(model_instance)
 
+            # CASE C: Custom Component Execution (if main)
             if custom_node:
                 res = self.execute_node(custom_node.id)
                 return str(res)
@@ -488,8 +518,8 @@ Return ONLY valid JSON.
             return "Error: No valid Agent or Custom Logic found."
 
         except Exception as e:
-            # We catch it here to return it to the frontend, but we also log it as an error
+            # Catch here to return to frontend, but also log error
             err_msg = f"Execution Error: {str(e)}"
-            # Log the final failure
             self.log_execution("root", "pipeline", {}, err_msg, status="error")
+            traceback.print_exc()
             return err_msg
