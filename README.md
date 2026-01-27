@@ -24,12 +24,40 @@ It allows developers to orchestrate LLMs, Tools, and RAG (Retrieval-Augmented Ge
 - [Usage Guide](#usage-guide)
   - [Building Flows](#building-flows)
   - [RAG Pipelines (Knowledge Base)](#rag-pipelines-knowledge-base)
+  - [External API Access](#external-api-access)
   - [Custom Python Components](#custom-python-components)
 - [Deployment](#deployment)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Features
+
+### 🧠 Agentic Workflows
+
+- **Visual Builder**: Drag-and-drop interface powered by React Flow to connect Models, Agents, and Tools
+- **Multi-Model Support**: Native integration with Groq (Llama 3, Mixtral) and OpenAI (GPT-4o)
+- **Tool Integration**: Pre-built nodes for Web Search (DuckDuckGo), Gmail, Calculator, and Financial Data
+
+<div align="center">
+  <img src="README_Imgs/WebScraping.png" width="80%" />
+  <p><em>Fig 2: Web Scraping Pipeline</em></p>
+</div>
+
+<div align="center">
+  <img src="README_Imgs/ExecutionLogs.png" width="80%" />
+  <p><em>Fig 3: Execution Logs</em></p>
+</div>
+
+### 📚 Advanced RAG
+
+- **Knowledge Base Manager**: Dedicated interface to upload, manage, and process documents (PDFs)
+- **Vectorization**: Automatic chunking and embedding of documents into Supabase pgvector
+- **Context Injection**: Seamlessly retrieve relevant context for Agents during inference
+
+<div align="center">
+  <img src="README_Imgs/KnowledgeBase.png" width="80%" />
+  <p><em>Fig 4: Knowledge Base Management</em></p>
+</div>
 
 ### 🚀 External API Access
 
@@ -38,28 +66,18 @@ It allows developers to orchestrate LLMs, Tools, and RAG (Retrieval-Augmented Ge
 - **Ready-to-Run Snippets**: Automatically generates hardcoded Python snippets for instant integration
 - **Self-Healing Keys**: Automatic API key generation for all users to ensure seamless onboarding
 
-<div align="center">
-  <img src="README_Imgs/ApiAccess.png" width="80%" />
-  <p><em>Fig 7: External API Access Modal</em></p>
-</div>
-
-### 📚 Advanced RAG & Knowledge Base
-
-- **Refined Document Management**: Improved UI for uploading and managing PDFs with real-time status tracking
-- **Vectorization**: Automatic chunking and embedding of documents into Supabase pgvector using OpenAI embeddings
-- **Context Injection**: Seamlessly retrieve relevant context for Agents during inference using dedicated Vector Store nodes
-
-<div align="center">
-  <img src="README_Imgs/KnowledgeBaseRefined.png" width="80%" />
-  <p><em>Fig 4: Knowledge Base Management (Refined)</em></p>
-</div>
-
 ### 📊 Advanced Visualization & UX
 
 - **Multi-Chart Dashboard**: Automatically generates multiple chart types (Bar, Line, Scatter, Pie) in a grid layout from a single dataset
 - **Data Insights**: Interactive dashboard showing dataset statistics (rows, columns, numeric/categorical breakdown)
 - **Enhanced Playground**: Resizable panel (up to 90% width) with a dedicated **Full Screen Mode** for immersive analysis
 - **Code-First Data Nodes**: Edit the internal Python code of Data Loaders and Visualizers to implement custom parsing or advanced charting logic
+
+<div align="center">
+  <img src="README_Imgs/DataViz1.png" width="49%" />
+  <img src="README_Imgs/DataViz2.png" width="49%" />
+  <p><em>Fig 5 & 6: Data Visualization Dashboards</em></p>
+</div>
 
 ### 🛠️ Code-First Extensibility
 
@@ -197,7 +215,30 @@ Run the development server:
 npm run dev
 ```
 
+Visit [http://localhost:3000](http://localhost:3000) to access Agflow.
+
 ## Usage Guide
+
+### Building Flows
+
+1. **Add Nodes**: Drag components from the sidebar (left) to the canvas
+2. **Connect**: Link the Right Handle (Output) of one node to the Left Handle (Input) of another
+3. **Standard Pattern**: Chat Input → Model → Chat Output
+4. **Agent Pattern**: Tools → Agent → Chat Output
+5. **Execute**: Open the Playground (Right Panel), type a message, and hit Run
+
+### RAG Pipelines (Knowledge Base)
+
+To chat with your PDF documents:
+
+1. Click **Knowledge Base** in the header
+2. Enter your OpenAI API Key (required for embedding generation)
+3. Upload a PDF
+4. Click **Extract & Embed**. The status will change to "EMBEDDED"
+5. On the canvas:
+   - Add a **PDF Loader** node (select your file)
+   - Connect it to a **Supabase Vector Store** node
+   - Connect the Vector Store node to an **Agent**
 
 ### External API Access
 
@@ -209,15 +250,22 @@ To run your flows from any external application:
 4.  **Run Snippet**: Copy the generated Python code. It already includes your `FLOW_ID` and `API_KEY`.
 5.  **Endpoint**: Your requests are proxied via `/api/v1/run/[flowId]` for secure, authenticated execution.
 
-### RAG Pipelines (Knowledge Base)
+### Custom Python Components
 
-1. Click **Knowledge Base** in the header.
-2. Upload a PDF.
-3. Click **Extract & Embed**. The status will change to "EMBEDDED" once processing is complete.
-4. On the canvas:
-   - Add a **PDF Loader** node (select your file).
-   - Connect it to a **Supabase Vector Store** node.
-   - Connect the Vector Store to an **Agent** to provide it with context.
+Agflow allows you to create nodes with arbitrary Python logic:
+
+1. Drag a **Custom Component** node to the canvas
+2. Click **Edit Code**
+3. Define a class `CustomComponent` with a `build` method:
+
+```python
+class CustomComponent:
+    def build(self, text: str, repeat: str) -> str:
+        # Arguments become input handles
+        return text * int(repeat)
+```
+
+4. Click **Save & Compile**. The node UI will update immediately to show inputs for `text` and `repeat`
 
 ## Deployment
 
@@ -237,7 +285,17 @@ To run your flows from any external application:
 
 ## Contributing
 
-Contributions are welcome! Please fork the repo and submit a PR for any features or bug fixes.
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
