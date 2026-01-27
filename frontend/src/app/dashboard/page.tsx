@@ -39,6 +39,7 @@ import axios from 'axios';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 import { Toaster, toast } from 'sonner';
+import { getOrCreateApiKey } from '@/app/auth/actions';
 
 // --- Icons ---
 import {
@@ -86,6 +87,7 @@ import Sidebar from '@/components/Sidebar';
 import KnowledgeBaseModal from '@/components/KnowledgeBaseModal';
 import HeaderWidgets from '@/components/HeaderWidgets';
 import LogsModal from '@/components/LogsModal';
+import ApiAccessModal from '@/components/ApiAccessModal';
 import BaseNode from '@/components/nodes/BaseNode';
 
 
@@ -197,6 +199,8 @@ function DashboardInner() {
     const [loading, setLoading] = useState(false);
     const [showPlayground, setShowPlayground] = useState(true);
     const [isMaximized, setIsMaximized] = useState(false);
+    const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+    const [userApiKey, setUserApiKey] = useState<string | null>(null);
 
     // Persistence & Metadata
     const [flowName, setFlowName] = useState("Untitled Flow");
@@ -231,6 +235,11 @@ function DashboardInner() {
                 const fullName = user.user_metadata?.fullName || user.user_metadata?.full_name || user.email || "";
                 const firstName = fullName.split(' ')[0];
                 setUserName(firstName);
+
+                // Ensure API key exists (self-healing)
+                const apiKey = await getOrCreateApiKey();
+                setUserApiKey(apiKey);
+
                 loadSavedFlows(user.id);
             }
         };
@@ -1486,6 +1495,13 @@ function DashboardInner() {
             {view === 'canvas' && <LogsModal />}
 
             {/* Header */}
+            <ApiAccessModal
+                isOpen={isApiModalOpen}
+                onClose={() => setIsApiModalOpen(false)}
+                flowId={currentFlowId}
+                apiKey={userApiKey}
+            />
+
             <header className="h-14 bg-slate-950 border-b border-slate-800 flex items-center px-4 justify-between z-50">
                 <div className="flex items-center gap-3">
                     <button onClick={() => handleProtectedAction(() => setView('templates'))} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
@@ -1506,7 +1522,8 @@ function DashboardInner() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <HeaderWidgets />
+                    <HeaderWidgets onApiClick={() => setIsApiModalOpen(true)} />
+
 
                     {/* Undo/Redo Buttons */}
                     <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1 mr-2">
