@@ -65,8 +65,7 @@ export async function POST(
         };
 
         // 4. Proxy to Python Backend
-        // Assuming Backend runs on port 8000
-        const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:8000';
+        const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
 
         const response = await fetch(`${backendUrl}/run_flow`, {
             method: 'POST',
