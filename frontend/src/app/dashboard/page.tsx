@@ -973,47 +973,308 @@ function DashboardInner() {
             }
             else if (type === 'simple') {
                 const nds = [
-                    { id: '1', type: 'agentNode', position: { x: 450, y: 150 }, data: { ...commonData } },
-                    { id: '2', type: 'groqModel', position: { x: 100, y: 150 }, data: { ...commonData } }
+                    {
+                        id: '0.11050281214214919',
+                        type: 'chatInput',
+                        position: { x: -285, y: 75 },
+                        data: { ...commonData, label: 'Chat Input' },
+                        measured: { width: 300, height: 265 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.3411371651800432',
+                        type: 'groqModel',
+                        position: { x: 150, y: 15 },
+                        data: { ...commonData, label: 'Groq', apiKey: '' },
+                        measured: { width: 300, height: 432 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.21620625083645728',
+                        type: 'chatOutput',
+                        position: { x: 525, y: 135 },
+                        data: { ...commonData, label: 'Chat Output' },
+                        measured: { width: 300, height: 239 },
+                        selected: false,
+                        dragging: false
+                    }
                 ];
-                const eds = [{ id: 'e2-1', source: '2', target: '1', animated: true, style: { stroke: '#a855f7' } }];
+                const eds = [
+                    {
+                        id: 'xy-edge__0.11050281214214919out-0.3411371651800432prompt',
+                        source: '0.11050281214214919',
+                        target: '0.3411371651800432',
+                        sourceHandle: 'out',
+                        targetHandle: 'prompt',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    },
+                    {
+                        id: 'xy-edge__0.3411371651800432out-0.21620625083645728in',
+                        source: '0.3411371651800432',
+                        target: '0.21620625083645728',
+                        sourceHandle: 'out',
+                        targetHandle: 'in',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    }
+                ];
                 resetState(nds, eds);
             }
             else if (type === 'agentic') {
                 const nds = [
-                    { id: '1', type: 'agentNode', position: { x: 500, y: 100 }, data: { ...commonData } },
-                    { id: '2', type: 'webSearchNode', position: { x: 100, y: 50 }, data: { ...commonData } },
-                    { id: '3', type: 'gmailNode', position: { x: 100, y: 250 }, data: { ...commonData } }
+                    {
+                        id: '0.8570055322585179',
+                        type: 'chatInput',
+                        position: { x: -150, y: 15 },
+                        data: { ...commonData, label: 'Chat Input' },
+                        measured: { width: 300, height: 265 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.9053041895049789',
+                        type: 'agentNode',
+                        position: { x: 285, y: -165 },
+                        data: { ...commonData, label: 'Agno Agent', systemPrompt: "You are an helpful agent that listens carefully to the user's query and performs action with tools like duck duck go, performs web scraping and outputs the result." },
+                        measured: { width: 300, height: 622 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.7070004382900412',
+                        type: 'webSearchNode',
+                        position: { x: 135, y: 540 },
+                        data: { ...commonData, label: 'DuckDuckGo' },
+                        measured: { width: 300, height: 250 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.7489077954227993',
+                        type: 'chatOutput',
+                        position: { x: 690, y: 165 },
+                        data: { ...commonData, label: 'Chat Output' },
+                        measured: { width: 300, height: 239 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.9425947638382488',
+                        type: 'groqModel',
+                        position: { x: -210, y: 315 },
+                        data: { ...commonData, label: 'Groq' },
+                        measured: { width: 300, height: 432 },
+                        selected: true,
+                        dragging: false
+                    }
                 ];
                 const eds = [
-                    { id: 'e2-1', source: '2', target: '1', animated: true, style: { stroke: '#a855f7' } },
-                    { id: 'e3-1', source: '3', target: '1', animated: true, style: { stroke: '#a855f7' } }
+                    {
+                        id: 'xy-edge__0.8570055322585179out-0.9053041895049789input',
+                        source: '0.8570055322585179',
+                        target: '0.9053041895049789',
+                        sourceHandle: 'out',
+                        targetHandle: 'input',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    },
+                    {
+                        id: 'xy-edge__0.9053041895049789response-0.7489077954227993in',
+                        source: '0.9053041895049789',
+                        target: '0.7489077954227993',
+                        sourceHandle: 'response',
+                        targetHandle: 'in',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    },
+                    {
+                        id: 'xy-edge__0.7070004382900412tool-0.9053041895049789tools',
+                        source: '0.7070004382900412',
+                        target: '0.9053041895049789',
+                        sourceHandle: 'tool',
+                        targetHandle: 'tools',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    },
+                    {
+                        id: 'xy-edge__0.9425947638382488out-0.9053041895049789model',
+                        source: '0.9425947638382488',
+                        target: '0.9053041895049789',
+                        sourceHandle: 'out',
+                        targetHandle: 'model',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    }
                 ];
                 resetState(nds, eds);
             }
             else if (type === 'rag') {
                 const nds = [
-                    { id: '1', type: 'pdfLoader', position: { x: 50, y: 50 }, data: { ...commonData } },
-                    { id: '2', type: 'textSplitter', position: { x: 300, y: 50 }, data: { ...commonData } },
-                    { id: '3', type: 'vectorStore', position: { x: 550, y: 50 }, data: { ...commonData } },
-                    { id: '4', type: 'agentNode', position: { x: 800, y: 150 }, data: { ...commonData } }
+                    {
+                        id: '0.10750114891657891',
+                        type: 'chatInput',
+                        position: { x: -210, y: -165 },
+                        data: { ...commonData, label: 'Chat Input' },
+                        measured: { width: 300, height: 265 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.7102099670189912',
+                        type: 'agentNode',
+                        position: { x: 270, y: -150 },
+                        data: { ...commonData, label: 'Agno Agent', systemPrompt: "You are a helpful assistant. \nALWAYS search the Knowledge Base for information before answering.\nIf the answer is in the context, quote it directly or summarize it.\nIf the answer is not in the knowledge base, say \"I couldn't find that information in the document.\"" },
+                        measured: { width: 300, height: 622 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.2696897887496388',
+                        type: 'openaiModel',
+                        position: { x: -210, y: 120 },
+                        data: { ...commonData, label: 'OpenAI', apiKey: '' },
+                        measured: { width: 300, height: 432 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.9579713372074085',
+                        type: 'vectorStore',
+                        position: { x: -210, y: 585 },
+                        data: { ...commonData, label: 'Supabase Vector', indexId: '' },
+                        measured: { width: 300, height: 356 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.7172417676384836',
+                        type: 'chatOutput',
+                        position: { x: 645, y: 240 },
+                        data: { ...commonData, label: 'Chat Output' },
+                        measured: { width: 300, height: 239 },
+                        selected: false,
+                        dragging: false
+                    }
                 ];
                 const eds = [
-                    { id: 'e1-2', source: '1', target: '2', animated: true, style: { stroke: '#f97316' } },
-                    { id: 'e2-3', source: '2', target: '3', animated: true, style: { stroke: '#f97316' } },
-                    { id: 'e3-4', source: '3', target: '4', animated: true, style: { stroke: '#a855f7' } }
+                    {
+                        id: 'xy-edge__0.10750114891657891out-0.7102099670189912input',
+                        source: '0.10750114891657891',
+                        target: '0.7102099670189912',
+                        sourceHandle: 'out',
+                        targetHandle: 'input',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    },
+                    {
+                        id: 'xy-edge__0.2696897887496388out-0.7102099670189912model',
+                        source: '0.2696897887496388',
+                        target: '0.7102099670189912',
+                        sourceHandle: 'out',
+                        targetHandle: 'model',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    },
+                    {
+                        id: 'xy-edge__0.9579713372074085kb-0.7102099670189912tools',
+                        source: '0.9579713372074085',
+                        target: '0.7102099670189912',
+                        sourceHandle: 'kb',
+                        targetHandle: 'tools',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    },
+                    {
+                        id: 'xy-edge__0.7102099670189912response-0.7172417676384836in',
+                        source: '0.7102099670189912',
+                        target: '0.7172417676384836',
+                        sourceHandle: 'response',
+                        targetHandle: 'in',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    }
                 ];
                 resetState(nds, eds);
             }
             else if (type === 'visualization') {
                 const nds = [
-                    { id: '1', type: 'dataLoaderNode', position: { x: 100, y: 150 }, data: { ...commonData } },
-                    { id: '2', type: 'groqModel', position: { x: 100, y: 400 }, data: { ...commonData, model: 'llama-3.3-70b-versatile' } },
-                    { id: '3', type: 'dataVisualizationNode', position: { x: 500, y: 250 }, data: { ...commonData } }
+                    {
+                        id: '2',
+                        type: 'groqModel',
+                        position: { x: 75, y: 375 },
+                        data: { ...commonData, model: 'llama-3.3-70b-versatile', apiKey: '' },
+                        measured: { width: 300, height: 432 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '3',
+                        type: 'dataVisualizationNode',
+                        position: { x: 465, y: 90 },
+                        data: { ...commonData, apiKey: '' },
+                        measured: { width: 300, height: 483 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.5871238564343997',
+                        type: 'chatOutput',
+                        position: { x: 810, y: 315 },
+                        data: { ...commonData, label: 'Chat Output' },
+                        measured: { width: 300, height: 239 },
+                        selected: false,
+                        dragging: false
+                    },
+                    {
+                        id: '0.6467250489993911',
+                        type: 'dataLoaderNode',
+                        position: { x: 0, y: 90 },
+                        data: { ...commonData, label: 'Data Loader' },
+                        measured: { width: 300, height: 216 },
+                        selected: true,
+                        dragging: false
+                    }
                 ];
                 const eds = [
-                    { id: 'e1-3', source: '1', sourceHandle: 'data', target: '3', targetHandle: 'dataSource', animated: true, style: { stroke: '#a855f7' } },
-                    { id: 'e2-3', source: '2', sourceHandle: 'output', target: '3', targetHandle: 'modelInput', animated: true, style: { stroke: '#a855f7' } }
+                    {
+                        id: 'e2-3',
+                        source: '2',
+                        target: '3',
+                        sourceHandle: 'output',
+                        targetHandle: 'modelInput',
+                        animated: true,
+                        style: { stroke: '#a855f7' }
+                    },
+                    {
+                        id: 'xy-edge__2out-3modelInput',
+                        source: '2',
+                        target: '3',
+                        sourceHandle: 'out',
+                        targetHandle: 'modelInput',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    },
+                    {
+                        id: 'xy-edge__3output-0.5871238564343997in',
+                        source: '3',
+                        target: '0.5871238564343997',
+                        sourceHandle: 'output',
+                        targetHandle: 'in',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    },
+                    {
+                        id: 'xy-edge__0.6467250489993911data-3dataInput',
+                        source: '0.6467250489993911',
+                        target: '3',
+                        sourceHandle: 'data',
+                        targetHandle: 'dataInput',
+                        animated: true,
+                        style: { stroke: '#a855f7', strokeWidth: 2 }
+                    }
                 ];
                 resetState(nds, eds);
             }
